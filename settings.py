@@ -222,7 +222,6 @@ DEFAULT_APPS = (
     'captcha',
     'couchdbkit.ext.django',
     'crispy_forms',
-    'crispy_bootstrap3to5',
     'field_audit',
     'gunicorn',
     'compressor',
@@ -242,8 +241,11 @@ SILENCED_SYSTEM_CHECKS = ['captcha.recaptcha_test_key_error']
 RECAPTCHA_PRIVATE_KEY = ''
 RECAPTCHA_PUBLIC_KEY = ''
 
-CRISPY_TEMPLATE_PACK = 'bootstrap3to5'
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap3to5"
+CRISPY_TEMPLATE_PACK = 'bootstrap3'
+CRISPY_ALLOWED_TEMPLATE_PACKS = (
+    'bootstrap',
+    'bootstrap3',
+)
 
 FIELD_AUDIT_AUDITORS = [
     "corehq.apps.users.auditors.HQAuditor",
