@@ -1,16 +1,16 @@
-/*global DOMPurify, Marionette, moment */
+/*global DOMPurify, Marionette */
 
 hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
     // 'hqwebapp/js/hq.helpers' is a dependency. It needs to be added
     // explicitly when webapps is migrated to requirejs
     var kissmetrics = hqImport("analytix/js/kissmetrix"),
         cloudcareUtils = hqImport("cloudcare/js/utils"),
+        markdown = hqImport("cloudcare/js/markdown"),
         constants = hqImport("cloudcare/js/form_entry/const"),
         formEntryUtils = hqImport("cloudcare/js/form_entry/utils"),
         FormplayerFrontend = hqImport("cloudcare/js/formplayer/app"),
         formplayerUtils = hqImport("cloudcare/js/formplayer/utils/utils"),
-        initialPageData = hqImport("hqwebapp/js/initial_page_data"),
-        md = window.markdownit();
+        initialPageData = hqImport("hqwebapp/js/initial_page_data");
 
     var separator = " to ",
         serverSeparator = "__",
@@ -50,9 +50,9 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             if (!_.isString(value)) {
                 return [false, undefined];
             }
-            var values = value.split(selectDelimiter),
+            var allValues = value.split(selectDelimiter),
                 searchForBlank = _.contains(values, ""),
-                values = _.without(values, "");
+                values = _.without(allValues, "");
 
             if (model.get('input') === 'select' || model.get('input') === 'checkbox') {
                 value = values;
@@ -116,14 +116,13 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                 if (domElement.is('input')) {
                     domElement.val(value);
                     domElement.change();
-                }
-                else {
+                } else {
                     // Set lookup table option by label
                     var matchingOption = function (el) {
-                        return el.find("option").filter(function (_) {
+                        return el.find("option").filter(function () {
                             return $(this).text().trim() === value;
                         });
-                    }
+                    };
                     var option = matchingOption(domElement);
                     if (domElement[0].multiple === true) {
                         var val = option.val();
@@ -132,8 +131,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                                 domElement.val().concat(val)
                             ).trigger("change");
                         }
-                    }
-                    else {
+                    } else {
                         if (option.length === 1) {
                             domElement.val(String(option.index() - 1)).trigger("change");
                         } else {
@@ -183,13 +181,16 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             var imageUri = this.options.model.get('imageUri'),
                 audioUri = this.options.model.get('audioUri'),
                 appId = this.model.collection.appId,
-                value = this.options.model.get('value');
+                value = this.options.model.get('value'),
+                itemsetChoicesDict = this.options.model.get('itemsetChoicesDict');
 
             return {
                 imageUrl: imageUri ? FormplayerFrontend.getChannel().request('resourceMap', imageUri, appId) : "",
                 audioUrl: audioUri ? FormplayerFrontend.getChannel().request('resourceMap', audioUri, appId) : "",
                 value: value,
                 errorMessage: this.errorMessage,
+                itemsetChoicesDict: itemsetChoicesDict,
+                contentTag: this.parentView.options.sidebarEnabled ? "div" : "td",
             };
         },
 
@@ -197,12 +198,13 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             this.parentView = this.options.parentView;
             this.model = this.options.model;
             this.errorMessage = null;
+            this._setItemset(this.model.attributes.itemsetChoices, this.model.attributes.itemsetChoicesKey);
 
             // initialize with default values or with sticky values if either is present
             var value = decodeValue(this.model, this.model.get('value'))[1],
                 allStickyValues = formplayerUtils.getStickyQueryInputs(),
-                stickyValue = allStickyValues[this.model.get('id')],
-                [searchForBlank, stickyValue] = decodeValue(this.model, stickyValue);
+                stickyValueEncoded = allStickyValues[this.model.get('id')],
+                [searchForBlank, stickyValue] = decodeValue(this.model, stickyValueEncoded);
             this.model.set('searchForBlank', searchForBlank);
             if (stickyValue && !value) {  // Sticky values don't override default values
                 value = stickyValue;
@@ -224,6 +226,25 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             'change @ui.searchForBlank': 'notifyParentOfFieldChange',
             'dp.change @ui.queryField': 'changeDateQueryField',
             'click @ui.searchForBlank': 'toggleBlankSearch',
+        },
+
+        _setItemset: function (itemsetChoices, itemsetChoicesKey) {
+            itemsetChoices = itemsetChoices || [];
+            let itemsetChoicesDict = {};
+
+            if (this.parentView.selectValuesByKeys) {
+                itemsetChoicesKey = itemsetChoicesKey || [];
+                itemsetChoicesKey.forEach((key,i) => itemsetChoicesDict[key] = itemsetChoices[i]);
+                this.model.set({
+                    itemsetChoicesKey: itemsetChoicesKey,
+                });
+            } else {
+                itemsetChoices.forEach((value,i) => itemsetChoicesDict[i] = value);
+            }
+            this.model.set({
+                itemsetChoices: itemsetChoices,
+                itemsetChoicesDict: itemsetChoicesDict,
+            });
         },
 
         _render: function () {
@@ -295,8 +316,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             if (this.model.get('input') === 'address') {
                 return;  // skip geocoder address
             }
-            var queryValue = $(this.ui.queryField).val(),
-                searchForBlank = $(this.ui.searchForBlank).prop('checked');
+            var searchForBlank = $(this.ui.searchForBlank).prop('checked');
             return encodeValue(this.model, searchForBlank);
         },
 
@@ -374,7 +394,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             this.ui.dateRange.on('cancel.daterangepicker', function () {
                 $(this).val('').trigger('change');
             });
-            this.ui.dateRange.on('apply.daterangepicker', function(ev, picker) {
+            this.ui.dateRange.on('apply.daterangepicker', function (ev, picker) {
                 $(this).val(picker.startDate.format(dateFormat) + separator + picker.endDate.format(dateFormat)).trigger('change');
             });
             this.ui.dateRange.on('change', function () {
@@ -412,14 +432,28 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
         childViewOptions: function () { return {parentView: this}; },
 
         initialize: function (options) {
-            this.parentModel = options.collection.models;
+            this.parentModel = options.collection.models || [];
+
+            // whether the select prompt selection is passed as itemset keys
+            // only here to maintain backward compatibility and can be removed
+            // once web apps fully transition using keys to convey select prompt selection.
+            this.selectValuesByKeys = false;
+
+            for (let model of this.parentModel) {
+                if ("itemsetChoicesKey" in model.attributes) {
+                    this.selectValuesByKeys = true;
+                    break;
+                }
+            }
         },
 
         templateContext: function () {
-            var description = md.render(this.options.collection.description.trim());
+            var description = this.options.collection.description === undefined ?
+                "" : markdown.render(this.options.collection.description.trim());
             return {
                 title: this.options.title.trim(),
                 description: DOMPurify.sanitize(description),
+                sidebarEnabled: this.options.sidebarEnabled,
             };
         },
 
@@ -467,9 +501,11 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                             }
                         }
                         self.collection.models[i].set({
-                            itemsetChoices: choices,
                             value: value,
                         });
+
+                        self.children.findByIndex(i)._setItemset(choices, response.models[i].get('itemsetChoicesKey'));
+
                         self.children.findByIndex(i)._render();      // re-render with new choice values
                     }
                 }
@@ -489,25 +525,25 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             e.preventDefault();
 
             self.validateAllFields().done(function () {
-                FormplayerFrontend.trigger("menu:query", self.getAnswers());
+                FormplayerFrontend.trigger(
+                    "menu:query",
+                    self.getAnswers(),
+                    self.selectValuesByKeys,
+                    self.options.sidebarEnabled
+                );
             });
         },
 
         validateFieldChange: function (changedChildView) {
             var self = this;
             var promise = $.Deferred();
-            var invalidFields = [];
 
             self._updateModelsForValidation().done(function (response) {
                 //Gather error messages
                 self.children.each(function (childView) {
-                    //Filter out empty required fields that user has not updated yet
-                    if ((!childView.hasRequiredError() || childView === changedChildView)
-                         && !childView.isValid()) {
-                        invalidFields.push(childView.model.get('text'));
-                    }
+                    //Filter out empty required fields and check for validity
+                    if (!childView.hasRequiredError() || childView === changedChildView) { childView.isValid(); }
                 });
-
                 promise.resolve(response);
             });
 
@@ -522,8 +558,9 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             var self = this;
             var promise = $.Deferred();
             var invalidFields = [];
+            var updatingModels = self.updateModelsForValidation || self._updateModelsForValidation();
 
-            self._updateModelsForValidation().done(function (response) {
+            $.when(updatingModels).done(function (response) {
                 // Gather error messages
                 self.children.each(function (childView) {
                     if (!childView.isValid()) {
@@ -553,20 +590,35 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
 
         _updateModelsForValidation: function () {
             var self = this;
+            var promise = $.Deferred();
+            self.updateModelsForValidation = promise;
 
             var urlObject = formplayerUtils.currentUrlToObject();
-            urlObject.setQueryData(self.getAnswers(), false);
-            var promise = $.Deferred(),
-                fetchingPrompts = FormplayerFrontend.getChannel().request("app:select:menus", urlObject);
+            urlObject.setQueryData({
+                inputs: self.getAnswers(),
+                execute: false,
+                selectValuesByKeys: self.selectValuesByKeys,
+            });
+            var fetchingPrompts = FormplayerFrontend.getChannel().request("app:select:menus", urlObject);
             $.when(fetchingPrompts).done(function (response) {
                 // Update models based on response
-                _.each(response.models, function (responseModel, i) {
-                    self.collection.models[i].set({
-                        error: responseModel.get('error'),
-                        required: responseModel.get('required'),
-                        required_msg: responseModel.get('required_msg'),
+                if (response.queryResponse) {
+                    _.each(response.queryResponse.displays, function (responseModel, i) {
+                        self.collection.models[i].set({
+                            error: responseModel.error,
+                            required: responseModel.required,
+                            required_msg: responseModel.required_msg,
+                        });
                     });
-                });
+                } else {
+                    _.each(response.models, function (responseModel, i) {
+                        self.collection.models[i].set({
+                            error: responseModel.get('error'),
+                            required: responseModel.get('required'),
+                            required_msg: responseModel.get('required_msg'),
+                        });
+                    });
+                }
                 promise.resolve(response);
 
             });

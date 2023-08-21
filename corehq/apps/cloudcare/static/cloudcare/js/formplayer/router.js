@@ -98,9 +98,9 @@ hqDefine("cloudcare/js/formplayer/router", function () {
                 response.appId = urlObject.appId;
             }
 
-             if (response.notification) {
+            if (response.notification) {
                 FormplayerFrontend.trigger("handleNotification", response.notification);
-             }
+            }
 
             // When the response gets parsed, it will automatically trigger form
             // entry if it is a form response.
@@ -150,9 +150,14 @@ hqDefine("cloudcare/js/formplayer/router", function () {
     FormplayerFrontend.on("menu:select", function (index) {
         var urlObject = utils.currentUrlToObject();
         if (index === undefined) {
-            urlObject.setQueryData(null, false, true);
+            urlObject.setQueryData({
+                inputs: null,
+                execute: false,
+                forceManualSearch: true,
+            });
         } else {
             urlObject.addSelection(index);
+            FormplayerFrontend.regions.getRegion('sidebar').empty();
         }
         utils.setUrlToObject(urlObject);
         API.listMenus();
@@ -194,9 +199,18 @@ hqDefine("cloudcare/js/formplayer/router", function () {
         API.listMenus();
     });
 
-    FormplayerFrontend.on("menu:query", function (queryDict) {
+    FormplayerFrontend.on("menu:query", function (queryDict, selectValuesByKeys = false, sidebarEnabled) {
         var urlObject = utils.currentUrlToObject();
-        urlObject.setQueryData(queryDict, true);
+        var queryObject = _.extend(
+            {
+                inputs: queryDict,
+                execute: true,
+                selectValuesByKeys,
+            },
+            // force manual search in split screen case search for workflow compatibility
+            sidebarEnabled ? { forceManualSearch: true } : {}
+        );
+        urlObject.setQueryData(queryObject);
         utils.setUrlToObject(urlObject);
         API.listMenus();
     });

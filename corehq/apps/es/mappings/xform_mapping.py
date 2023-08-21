@@ -2,12 +2,14 @@ from corehq.apps.es.client import Tombstone
 from corehq.pillows.core import DATE_FORMATS_ARR, DATE_FORMATS_STRING
 from corehq.apps.es.mappings.const import NULL_VALUE
 
+XFORM_DATE_FORMATS_STRING = "epoch_millis||" + DATE_FORMATS_STRING
+
 XFORM_MAPPING = {
     "_meta": {
         "created": "2013-08-13"
     },
     "date_detection": False,
-    "date_formats": DATE_FORMATS_ARR,  # for parsing the explicitly defined dates
+    "date_formats": DATE_FORMATS_ARR,
     "dynamic": False,
     "properties": {
         "#export_tag": {
@@ -45,19 +47,12 @@ XFORM_MAPPING = {
         },
         "domain": {
             "fields": {
-                "domain": {
-                    "index": "analyzed",
-                    "type": "string"
-                },
                 "exact": {
-                    # exact is full text string match - hyphens get parsed in standard
-                    # analyzer
-                    # in queries you can access by domain.exact
                     "index": "not_analyzed",
                     "type": "string"
                 }
             },
-            "type": "multi_field"
+            "type": "string"
         },
         "external_blobs": {
             "dynamic": False,
@@ -87,7 +82,7 @@ XFORM_MAPPING = {
                             "type": "string"
                         },
                         "@date_modified": {
-                            "format": DATE_FORMATS_STRING,
+                            "format": XFORM_DATE_FORMATS_STRING,
                             "type": "date"
                         },
                         "@user_id": {
@@ -103,7 +98,7 @@ XFORM_MAPPING = {
                             "type": "string"
                         },
                         "date_modified": {
-                            "format": DATE_FORMATS_STRING,
+                            "format": XFORM_DATE_FORMATS_STRING,
                             "type": "date"
                         },
                         "user_id": {
@@ -147,11 +142,11 @@ XFORM_MAPPING = {
                             "type": "string"
                         },
                         "timeEnd": {
-                            "format": DATE_FORMATS_STRING,
+                            "format": XFORM_DATE_FORMATS_STRING,
                             "type": "date"
                         },
                         "timeStart": {
-                            "format": DATE_FORMATS_STRING,
+                            "format": XFORM_DATE_FORMATS_STRING,
                             "type": "date"
                         },
                         "userID": {
@@ -171,7 +166,7 @@ XFORM_MAPPING = {
             "type": "boolean"
         },
         "inserted_at": {
-            "format": DATE_FORMATS_STRING,
+            "format": XFORM_DATE_FORMATS_STRING,
             "type": "date"
         },
         "partial_submission": {
@@ -182,11 +177,11 @@ XFORM_MAPPING = {
             "type": "string"
         },
         "received_on": {
-            "format": DATE_FORMATS_STRING,
+            "format": XFORM_DATE_FORMATS_STRING,
             "type": "date"
         },
         "server_modified_on": {
-            "format": DATE_FORMATS_STRING,
+            "format": XFORM_DATE_FORMATS_STRING,
             "type": "date"
         },
         "submit_ip": {
@@ -202,13 +197,9 @@ XFORM_MAPPING = {
                 "exact": {
                     "index": "not_analyzed",
                     "type": "string"
-                },
-                "xmlns": {
-                    "index": "analyzed",
-                    "type": "string"
                 }
             },
-            "type": "multi_field"
+            "type": "string"
         },
         Tombstone.PROPERTY_NAME: {
             "type": "boolean"
