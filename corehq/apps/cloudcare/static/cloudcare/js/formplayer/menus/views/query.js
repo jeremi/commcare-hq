@@ -143,6 +143,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             };
         },
         initMapboxWidget = function (model) {
+            console.log ("IN initiMapboxWidget")
             var id = model.get('id'),
                 inputId = id + "_mapbox",
                 $field = $("#" + inputId);

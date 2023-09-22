@@ -2,6 +2,7 @@
 
 
 import os
+MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoiZGltYWdpLXNhYXMiLCJhIjoiY2tmZmg4aWdxMDBkczJxcGQxN2E2ZzQzNSJ9.FdL_9SRzTkukBAH8JjDWtQ'
 
 DATABASES = {
     'default': {
