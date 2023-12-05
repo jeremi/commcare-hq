@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
 from corehq.apps.users.models import CouchUser
+from corehq.apps.users.user_data import UserData
 from corehq.util.log import with_progress_bar
 from corehq.util.queries import queryset_to_iterator
 
@@ -24,4 +25,4 @@ def get_users_without_user_data():
 def populate_user_data(django_user):
     user = CouchUser.from_django_user(django_user, strict=True)
     for domain in user.get_domains():
-        user.get_user_data(domain).save()
+        UserData.lazy_init(user, domain)

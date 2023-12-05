@@ -42,6 +42,18 @@ class UserData:
         )
         return cls(sql_data.data, couch_user, domain, profile_id=sql_data.profile_id)
 
+    @classmethod
+    def for_user(cls, couch_user, domain):
+        try:
+            sql_data = SQLUserData.objects.get(
+                user_id=couch_user.user_id,
+                domain=domain,
+            )
+        except SQLUserData.DoesNotExist:
+            return cls({}, couch_user, domain)
+
+        return cls(sql_data.data, couch_user, domain, profile_id=sql_data.profile_id)
+
     def save(self):
         SQLUserData.objects.update_or_create(
             user_id=self._couch_user.user_id,
