@@ -126,8 +126,13 @@ hqDefine("cloudcare/js/formplayer/menus/controller", function () {
             FormplayerFrontend.regions.getRegion('persistentCaseTile').empty();
         }
 
+        var queryResponse = menuResponse.queryResponse;
         if (sidebarEnabled && menuResponse.type === constants.ENTITIES && queryResponse)  {
-            var queryCollection = new Collection(queryResponse.displays);
+            let queryCollection = new Collection(queryResponse.displays);
+            // hasOwnProperty check only required temporarily for transient moment during deploy when response will not contain groupHeaders
+            if (queryResponse.hasOwnProperty("groupHeaders") && Object.keys(queryResponse.groupHeaders).length > 0) {
+                queryCollection = new Collection(menusUtils.groupDisplays(new Collection(queryResponse.displays), queryResponse.groupHeaders));
+            }
             FormplayerFrontend.regions.getRegion('sidebar').show(
                 QueryListView({
                     collection: queryCollection,
@@ -139,9 +144,14 @@ hqDefine("cloudcare/js/formplayer/menus/controller", function () {
                 }).render()
             );
         } else if (sidebarEnabled && menuResponse.type === constants.QUERY) {
+            var queryCollection = menuResponse;
+            // hasOwnProperty check only required temporarily for transient moment during deploy when response will not contain groupHeaders
+            if (menuResponse.hasOwnProperty("groupHeaders") && Object.keys(menuResponse.groupHeaders).length > 0) {
+                queryCollection = new Collection(menusUtils.groupDisplays(menuResponse, menuResponse.groupHeaders));
+            }
             FormplayerFrontend.regions.getRegion('sidebar').show(
                 QueryListView({
-                    collection: menuResponse,
+                    collection: queryCollection,
                     title: menuResponse.title,
                     description: menuResponse.description,
                     hasDynamicSearch: menuResponse.dynamicSearch,

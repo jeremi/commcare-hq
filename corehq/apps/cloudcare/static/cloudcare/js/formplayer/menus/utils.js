@@ -8,7 +8,8 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
         toggles = hqImport("hqwebapp/js/toggles"),
         utils = hqImport("cloudcare/js/formplayer/utils/utils"),
         views = hqImport("cloudcare/js/formplayer/menus/views"),
-        constants = hqImport("cloudcare/js/formplayer/constants");
+        constants = hqImport("cloudcare/js/formplayer/constants"),
+        Collection = hqImport("cloudcare/js/formplayer/menus/collections");
 
     var recordPosition = function (position) {
         sessionStorage.locationLat = position.coords.latitude;
@@ -96,11 +97,11 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
 
         if (langs && langs.length > 1) {
             langModels = _.map(langs, function (lang) {
-                let matchingLanguage = langCodeNameMapping[lang];
-                return {
-                    lang_code: lang,
-                    lang_label: matchingLanguage ? matchingLanguage : lang,
-                };
+                    let matchingLanguage = langCodeNameMapping[lang];
+                    return {
+                        lang_code: lang,
+                        lang_label: matchingLanguage ? matchingLanguage : lang,
+                    };
             });
             langCollection = new Backbone.Collection(langModels);
         } else {
@@ -162,6 +163,39 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
         } else if (menuResponse.type === constants.ENTITIES) {
             return menuResponse.queryResponse && menuResponse.queryResponse.displays.length > 0;
         }
+    var getField = function (obj, fieldName) {
+        return typeof obj.get === 'function' ?  obj.get(fieldName) : obj[fieldName];
+    };
+
+    var groupDisplays = function (displays, groupHeaders) {
+        const groupedDisplays = [];
+        let currentGroup = {
+            groupKey: null,
+            groupName: null,
+            displays: [],
+            required: false,
+        };
+
+        displays.forEach(display => {
+            const groupKey = getField(display, 'groupKey');
+            if (currentGroup.groupKey !== groupKey) {
+                if (currentGroup.groupKey) {
+                    groupedDisplays.push(currentGroup);
+                }
+                currentGroup = {
+                    groupKey: groupKey,
+                    groupName: groupHeaders[groupKey],
+                    displays: [display],
+                    required: getField(display, 'required'),
+                };
+            } else {
+                currentGroup.displays.push(display);
+                currentGroup.required = currentGroup.required || getField(display, 'required');
+            }
+        });
+        groupedDisplays.push(currentGroup);
+
+        return groupedDisplays;
     };
 
     var getMenuView = function (menuResponse) {
@@ -184,6 +218,12 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
                 execute: false,
                 forceManualSearch: false,
             });
+            if (menuResponse.hasOwnProperty("groupHeaders") && Object.keys(menuResponse.groupHeaders).length > 0) {
+                var groupedDisplays = groupDisplays(menuResponse, menuResponse.groupHeaders);
+                var displayCollection = new Collection(groupedDisplays);
+                displayCollection.description = menuResponse.description;
+                menuData.collection = displayCollection;
+            }
             return QueryView(menuData);
         } else if (menuResponse.type === constants.ENTITIES) {
             var searchText = urlObject.search;
@@ -214,6 +254,7 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
     };
 
     return {
+        groupDisplays: groupDisplays,
         getMenuView: getMenuView,
         getMenuData: getMenuData,
         getCaseListView: getCaseListView,
@@ -223,4 +264,4 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
         startOrStopLocationWatching: startOrStopLocationWatching,
         sidebarEnabled: sidebarEnabled,
     };
-});
+}});
