@@ -163,6 +163,8 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
         } else if (menuResponse.type === constants.ENTITIES) {
             return menuResponse.queryResponse && menuResponse.queryResponse.displays.length > 0;
         }
+    };
+
     var getField = function (obj, fieldName) {
         return typeof obj.get === 'function' ?  obj.get(fieldName) : obj[fieldName];
     };
@@ -264,4 +266,4 @@ hqDefine("cloudcare/js/formplayer/menus/utils", function () {
         startOrStopLocationWatching: startOrStopLocationWatching,
         sidebarEnabled: sidebarEnabled,
     };
-}});
+});
