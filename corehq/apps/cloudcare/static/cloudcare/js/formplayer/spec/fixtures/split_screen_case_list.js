@@ -34,9 +34,6 @@ hqDefine("cloudcare/js/formplayer/spec/fixtures/split_screen_case_list", functio
                 "details": null,
             },
         ],
-        "groupHeaders": {
-            "groupKey": "group name",
-        },
         "headers": [
             "Name",
             "Sex",
@@ -60,6 +57,9 @@ hqDefine("cloudcare/js/formplayer/spec/fixtures/split_screen_case_list", functio
             ],
             "queryKey": "search_command.m0",
             "type": "query",
+            "groupHeaders": {
+                "groupKey": "group name",
+            },
         },
         "styles": [
             {
