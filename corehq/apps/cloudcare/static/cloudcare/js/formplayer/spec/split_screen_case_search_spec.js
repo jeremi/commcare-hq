@@ -7,6 +7,7 @@ hqDefine("cloudcare/js/formplayer/spec/split_screen_case_search_spec", function 
             FakeFormplayer = hqImport('cloudcare/js/formplayer/spec/fake_formplayer'),
             FormplayerFrontend = hqImport('cloudcare/js/formplayer/app'),
             splitScreenCaseListResponse = hqImport('cloudcare/js/formplayer/spec/fixtures/split_screen_case_list'),
+            Collection = hqImport("cloudcare/js/formplayer/menus/collections"),
             Toggles = hqImport('hqwebapp/js/toggles'),
             Utils = hqImport('cloudcare/js/formplayer/utils/utils');
 
@@ -66,24 +67,13 @@ hqDefine("cloudcare/js/formplayer/spec/split_screen_case_search_spec", function 
             });
 
             it('should show sidebar and main regions with query type split screen case search', function () {
-                const responseWithTypeQuery = _.extend(
-                    {},
-                    splitScreenCaseListResponse,
-                    { 'type': 'query'},
-                    new Backbone.Collection(splitScreenCaseListResponse.queryResponse.displays));
-                Controller.showMenu(responseWithTypeQuery);
-
+                Controller.showMenu(Collection(splitScreenCaseListResponse.queryResponse,{ parse: true }));
                 assert.isTrue(stubs.regions['sidebar'].show.called);
                 assert.isTrue(stubs.regions['main'].show.called);
             });
 
             it('should explicitly set sidebarEnabled and triggerEmptyCaseList with query type split screen case search', function () {
-                const responseWithTypeQuery = _.extend(
-                    {},
-                    splitScreenCaseListResponse,
-                    { 'type': 'query'},
-                    new Backbone.Collection(splitScreenCaseListResponse.queryResponse.displays));
-                Controller.showMenu(responseWithTypeQuery);
+                Controller.showMenu(Collection(splitScreenCaseListResponse.queryResponse,{ parse: true }));
 
                 assert.isTrue(stubs.regions['main'].show.called);
                 var showMain = stubs.regions['main'].show.getCalls()[0];
@@ -92,12 +82,8 @@ hqDefine("cloudcare/js/formplayer/spec/split_screen_case_search_spec", function 
             });
 
             it('should hide sidebar if there are no search inputs in query response', function () {
-                const responseWithTypeQuery = _.extend(
-                    {},
-                    splitScreenCaseListResponse,
-                    { 'type': 'query'},
-                    new Backbone.Collection([]));
-                Controller.showMenu(responseWithTypeQuery);
+                let queryResponse = _.extend({}, splitScreenCaseListResponse.queryResponse, {'displays': []});
+                Controller.showMenu(Collection(queryResponse,{ parse: true }));
 
                 assert.isTrue(stubs.regions['sidebar'].empty.called);
             });

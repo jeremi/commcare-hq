@@ -39,7 +39,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             displays: [],
             required: false,
         };
-
+        console.log("IN GROUP DISPLAYS, displays is", displays)
         displays.forEach(display => {
             const groupKey = getField(display, 'groupKey');
             if (currentGroup.groupKey !== groupKey) {
