@@ -2080,6 +2080,7 @@ def _get_manage_domain_alerts_section(domain):
 
 
 def _get_integration_section(domain, couch_user):
+    from corehq.motech.repeaters.views import DomainForwardingRepeatRecords
 
     def _get_forward_name(repeater_type=None, **context):
         if repeater_type == 'FormRepeater':
@@ -2114,7 +2115,7 @@ def _get_integration_section(domain, couch_user):
             {
                 'title': _('Data Forwarding Records'),
                 'url': reverse('domain_report_dispatcher',
-                               args=[domain, _get_repeat_record_report(domain)])
+                               args=[domain, DomainForwardingRepeatRecords.slug])
             },
             {
                 'title': _(MotechLogListView.page_title),
@@ -2608,15 +2609,3 @@ class AttendanceTrackingTab(UITab):
     def _is_viewable(self):
         # The FF check is temporary until the full feature is released
         return toggles.ATTENDANCE_TRACKING.enabled(self.domain) and self.couch_user.can_manage_events(self.domain)
-
-
-def _get_repeat_record_report(domain):
-    from corehq.motech.repeaters.models import are_repeat_records_migrated
-    from corehq.motech.repeaters.views import (
-        DomainForwardingRepeatRecords,
-        SQLRepeatRecordReport,
-    )
-
-    if are_repeat_records_migrated(domain):
-        return SQLRepeatRecordReport.slug
-    return DomainForwardingRepeatRecords.slug
