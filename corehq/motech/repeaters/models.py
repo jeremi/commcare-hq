@@ -1592,6 +1592,9 @@ class SQLRepeatRecord(SyncSQLToCouchMixin, models.Model):
     def handle_exception(self, exception):
         self.add_client_failure_attempt(str(exception))
 
+    def handle_payload_exception(self, exception):
+        self.add_client_failure_attempt(str(exception), retry=False)
+
     def add_attempt(self, attempt):
         assert attempt is None, "SQL attempts are added/saved on create"
 
