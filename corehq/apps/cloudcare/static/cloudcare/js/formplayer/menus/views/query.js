@@ -609,6 +609,12 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             };
         },
 
+        updateSubmitDisabled(disabled) {
+            this.disabled = disabled;
+            var submitButton = this.ui.submitButton;
+            submitButton.prop('disabled', this.disabled);
+        },
+
         ui: {
             clearButton: '#query-clear-button',
             submitButton: '#query-submit-button',
@@ -705,8 +711,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                 self.updateSearchResults();
             }
             console.log("field changed");
-            var submitButton = this.ui.submitButton;
-            submitButton.prop('disabled', false);
+            self.updateSubmitDisabled(false);
         },
 
         clearAction: function () {
@@ -719,8 +724,7 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                 self.updateSearchResults();
             }
             console.log("clearing action");
-            var submitButton = this.ui.submitButton;
-            submitButton.prop('disabled', true);
+            self.updateSubmitDisabled(true);
         },
 
         submitAction: function (e) {
