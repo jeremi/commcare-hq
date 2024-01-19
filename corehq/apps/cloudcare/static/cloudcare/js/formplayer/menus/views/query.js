@@ -589,8 +589,15 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
                 const groupedCollection = groupDisplays(options.collection, options.groupHeaders);
                 this.collection = new Collection(groupedCollection);
             }
+            this.submitDisabled = true;
+            
         },
-
+        
+        onRender() {
+            console.log("in querylist render");
+            var submitButton = this.ui.submitButton;
+            submitButton.prop('disabled', this.submitDisabled);
+        },
         templateContext: function () {
             var description = this.options.collection.description === undefined ?
                 "" : markdown.render(this.options.collection.description.trim());
@@ -697,6 +704,9 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             if (self.dynamicSearchEnabled && useDynamicSearch) {
                 self.updateSearchResults();
             }
+            console.log("field changed");
+            var submitButton = this.ui.submitButton;
+            submitButton.prop('disabled', false);
         },
 
         clearAction: function () {
@@ -708,6 +718,9 @@ hqDefine("cloudcare/js/formplayer/menus/views/query", function () {
             if (self.dynamicSearchEnabled) {
                 self.updateSearchResults();
             }
+            console.log("clearing action");
+            var submitButton = this.ui.submitButton;
+            submitButton.prop('disabled', true);
         },
 
         submitAction: function (e) {
