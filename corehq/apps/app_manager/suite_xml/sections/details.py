@@ -2,31 +2,38 @@
 DetailContributor
 -----------------
 
-Details represent the configuration for case lists and case details. The reuse of the word "Detail" here is
-unfortunate. Details **can** be used for other purposes, such as the ``referral_detail``, but 99% of the time
-they're used for case list/detail.
+Details represent the configuration for case lists and case details. The
+reuse of the word "Detail" here is unfortunate. Details **can** be used
+for other purposes, such as the ``referral_detail``, but 99% of the
+time they're used for case list/detail.
 
-The case list is the "short" detail and the case detail is the "long" detail. A handful of configurations are only
-supported for one of these, e.g., actions only get added to the short detail.
+The case list is the "short" detail and the case detail is the "long"
+detail. A handful of configurations are only supported for one of
+these, e.g., actions only get added to the short detail.
 
-The detail element can be nested. HQ never nests short details, but it nests long details to produce tabbed case
-details. Each tab has its own ``<detail>`` element.
+The detail element can be nested. HQ never nests short details, but it
+nests long details to produce tabbed case details. Each tab has its own
+``<detail>`` element.
 
-The bulk of detail configuration is in the display properties, called "fields" and sometimes "columns" in the code.
-Each field has a good deal of configuration, and the code transforms them into named tuples while processing them.
-Each field has a format, one of about a dozen options. Formats are typically either UI-based, such as formatting a
-phone number to display as a link, or calculation-based, such as configuring a property to display differently when
-it's "late", i.e., is too far past some reference date.
+The bulk of detail configuration is in the display properties,
+called "fields" and sometimes "columns" in the code. Each field has a
+good deal of configuration, and the code transforms them into named
+tuples while processing them. Each field has a format, one of about a
+dozen options. Formats are typically either UI-based, such as
+formatting a phone number to display as a link, or calculation-based,
+such as configuring a property to display differently when it's "late",
+i.e., is too far past some reference date.
 
-Most fields map to a particular case property, with the exception of calculated properties. These calculated
-properties are identified only by number. A typical field might be called ``case_dob_1`` in the suite, indicating
-both its position and its case property, but a calculation would be called ``case_calculated_property_1``.
+Most fields map to a particular case property, with the exception of
+calculated properties. These calculated properties are identified only
+by number. A typical field might be called ``case_dob_1`` in the suite,
+indicating both its position and its case property, but a calculation
+would be called ``case_calculated_property_1``.
 
 """
 from collections import defaultdict, namedtuple
 
 from eulxml.xmlmap.core import load_xmlobject_from_string
-from lxml import etree
 from memoized import memoized
 
 from corehq import toggles
@@ -112,7 +119,10 @@ class DetailContributor(SectionContributor):
                         if detail.case_tile_template:
                             helper = CaseTileHelper(self.app, module, detail, detail_id, detail_type,
                                 self.build_profile_id, detail_column_infos, self.entries_helper)
-                            elements.append(helper.build_case_tile_detail())
+
+                            d = helper.build_case_tile_detail()
+                            self._add_custom_variables(detail, d)
+                            elements.append(d)
                         else:
                             print_template_path = None
                             if detail.print_template:
@@ -157,6 +167,10 @@ class DetailContributor(SectionContributor):
         """
         from corehq.apps.app_manager.detail_screen import get_column_generator
         d = Detail(id=id, title=title, nodeset=nodeset, print_template=print_template, relevant=relevant)
+        if (detail_type == 'case_short' or detail_type == 'search_short') \
+                and hasattr(module, 'lazy_load_case_list_fields') and module.lazy_load_case_list_fields:
+            d.lazy_loading = module.lazy_load_case_list_fields
+
         self._add_custom_variables(detail, d)
         if tabs:
             tab_spans = detail.get_tab_spans()
@@ -184,7 +198,13 @@ class DetailContributor(SectionContributor):
             if len(d.details):
                 helper = EntriesHelper(self.app)
                 datums = helper.get_datum_meta_module(module)
-                d.variables.extend([DetailVariable(name=datum.id, function=datum.datum.value) for datum in datums])
+                d.variables.extend([
+                    DetailVariable(name=datum.id, function=datum.datum.value)
+                    for datum in datums
+                    # FixtureSelect isn't supported under variables
+                    # More context here: https://github.com/dimagi/commcare-hq/pull/33769#discussion_r1410315708
+                    if datum.action != 'fixture_select'
+                ])
                 return d
             else:
                 return None
@@ -211,7 +231,8 @@ class DetailContributor(SectionContributor):
                 # column_info is an instance of DetailColumnInfo named tuple.
                 fields = get_column_generator(
                     self.app, module, detail, parent_tab_nodeset=nodeset,
-                    detail_type=detail_type, *column_info
+                    detail_type=detail_type, entries_helper=self.entries_helper,
+                    *column_info
                 ).fields
                 for field in fields:
                     d.fields.append(field)
@@ -229,6 +250,8 @@ class DetailContributor(SectionContributor):
                         id
                     )) is not None:
                         d.actions.append(case_search_action)
+            # Add select text
+            self.add_select_text_to_detail(d, self.app, detail_type, module)
 
             try:
                 if not self.app.enable_multi_sort:
@@ -240,16 +263,11 @@ class DetailContributor(SectionContributor):
                 return d
 
     def _add_custom_variables(self, detail, d):
-        custom_variables = detail.custom_variables
-        if custom_variables:
-            custom_variable_elements = [
-                variable for variable in
-                etree.fromstring("<variables>{}</variables>".format(custom_variables))
-            ]
-            d.variables.extend([
-                load_xmlobject_from_string(etree.tostring(e, encoding='utf-8'), xmlclass=DetailVariable)
-                for e in custom_variable_elements
-            ])
+        custom_variables_dict = detail.custom_variables_dict
+        if custom_variables_dict:
+            d.variables.extend(
+                DetailVariable(name=name, function=function) for name, function in custom_variables_dict.items()
+            )
 
     def _get_detail_tab_nodeset(self, module, detail, tab):
         if not tab.has_nodeset:
@@ -339,11 +357,19 @@ class DetailContributor(SectionContributor):
 
         frame = PushFrame()
         frame.add_command(XPath.string(id_strings.form_command(form)))
+        for datum in DetailContributor.get_datums_for_action(entries_helper, module, form):
+            frame.add_datum(datum)
 
-        target_form_dm = entries_helper.get_datums_meta_for_form_generic(form)
+        frame.add_datum(StackDatum(id=RETURN_TO, value=XPath.string(id_strings.menu_id(module))))
+        action.stack.add_frame(frame)
+        return action
+
+    @staticmethod
+    def get_datums_for_action(entries_helper, source_module, target_form):
+        target_form_dm = entries_helper.get_datums_meta_for_form_generic(target_form)
         source_form_dm = []
-        if len(module.forms):
-            source_form_dm = entries_helper.get_datums_meta_for_form_generic(module.get_form(0))
+        if len(source_module.forms):
+            source_form_dm = entries_helper.get_datums_meta_for_form_generic(source_module.get_form(0))
         for target_meta in target_form_dm:
             if target_meta.requires_selection:
                 # This is true for registration forms where the case being created is a subcase
@@ -355,17 +381,12 @@ class DetailContributor(SectionContributor):
                 except ValueError:
                     pass
                 else:
-                    frame.add_datum(StackDatum(
+                    yield StackDatum(
                         id=target_meta.id,
                         value=session_var(source_dm.id))
-                    )
             else:
                 s_datum = target_meta.datum
-                frame.add_datum(StackDatum(id=s_datum.id, value=s_datum.function))
-
-        frame.add_datum(StackDatum(id=RETURN_TO, value=XPath.string(id_strings.menu_id(module))))
-        action.stack.add_frame(frame)
-        return action
+                yield StackDatum(id=s_datum.id, value=s_datum.function)
 
     @staticmethod
     def get_case_search_action(module, build_profile_id, detail_id):
@@ -476,6 +497,8 @@ class DetailContributor(SectionContributor):
                     grid_width=12,
                     grid_x=0,
                     grid_y=0,
+                    show_border=False,
+                    show_shading=False,
                 ),
                 header=Header(text=Text()),
                 template=Template(text=Text(xpath_function=xml)),
@@ -498,6 +521,8 @@ class DetailContributor(SectionContributor):
                     grid_width=12,
                     grid_x=0,
                     grid_y=0,
+                    show_border=False,
+                    show_shading=False,
                 ),
                 header=Header(text=Text()),
                 template=Template(text=Text(xpath=TextXPath(
@@ -529,6 +554,11 @@ class DetailContributor(SectionContributor):
     def add_no_items_text_to_detail(detail, app, detail_type, module):
         if detail_type.endswith('short') and app.supports_empty_case_list_text:
             detail.no_items_text = Text(locale_id=id_strings.no_items_text_detail(module))
+
+    @staticmethod
+    def add_select_text_to_detail(detail, app, detail_type, module):
+        if detail_type.endswith('short') and app.supports_select_text:
+            detail.select_text = Text(locale_id=id_strings.select_text_detail(module))
 
 
 class DetailsHelper(object):

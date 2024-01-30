@@ -12,6 +12,7 @@
  */
 hqDefine("app_manager/js/details/column", function () {
     const uiElement = hqImport('hqwebapp/js/bootstrap3/ui-element');
+    const initialPageData = hqImport('hqwebapp/js/initial_page_data').get;
 
     return function (col, screen) {
         /*
@@ -39,6 +40,8 @@ hqDefine("app_manager/js/details/column", function () {
             horizontal_align: "left",
             vertical_align: "start",
             font_size: "medium",
+            show_border: false,
+            show_shading: false,
         };
         _.each(_.keys(defaults), function (key) {
             self.original[key] = self.original[key] || defaults[key];
@@ -49,28 +52,45 @@ hqDefine("app_manager/js/details/column", function () {
         self.case_tile_field = ko.observable(self.original.case_tile_field);
 
         self.coordinatesVisible = ko.observable(true);
-        self.tileRowMax = ko.observable(7);
+        self.tileRowMax = ko.observable(7); // set dynamically by screen
         self.tileColumnMax = ko.observable(13);
-        self.tileRowStart = ko.observable(self.original.grid_y || 1);
-        self.tileRowOptions = [""].concat(_.range(1, self.tileRowMax()));
-        self.tileColumnStart = ko.observable(self.original.grid_x || 1);
-        self.tileColumnOptions = [""].concat(_.range(1, self.tileColumnMax()));
+        self.tileRowStart = ko.observable(self.original.grid_y + 1 || 1); // converts from 0 to 1-based for UI
+        self.tileRowOptions = ko.computed(function () {
+            return _.range(1, self.tileRowMax());
+        });
+        self.tileColumnStart = ko.observable(self.original.grid_x + 1 || 1); // converts from 0 to 1-based for UI
+        self.tileColumnOptions = _.range(1, self.tileColumnMax());
         self.tileWidth = ko.observable(self.original.width || self.tileRowMax() - 1);
         self.tileWidthOptions = ko.computed(function () {
             return _.range(1, self.tileColumnMax() + 1 - (self.tileColumnStart() || 1));
         });
         self.tileHeight = ko.observable(self.original.height || 1);
         self.tileHeightOptions = ko.computed(function () {
-            return _.range(1, 5 - (self.tileRowStart() || 1));
+            return _.range(1, self.tileRowMax() + 1 - (self.tileRowStart() || 1));
         });
         self.horizontalAlign = ko.observable(self.original.horizontal_align || 'left');
         self.horizontalAlignOptions = ['left', 'center', 'right'];
 
-        self.verticalAlign = ko.observable(self.original.vertial_align || 'start');
+        self.verticalAlign = ko.observable(self.original.vertical_align || 'start');
         self.verticalAlignOptions = ['start', 'center', 'end'];
 
         self.fontSize = ko.observable(self.original.font_size || 'medium');
         self.fontSizeOptions = ['small', 'medium', 'large'];
+
+        self.showBorder = ko.observable(self.original.show_border || false);
+        self.showShading = ko.observable(self.original.show_shading || false);
+
+        self.openStyleModal = function () {
+            const $modalDiv = $(document.createElement("div"));
+            $modalDiv.attr("data-bind", "template: 'style_configuration_modal'");
+            $modalDiv.koApplyBindings(self);
+            const $modal = $modalDiv.find('.modal');
+            $modal.appendTo('body');
+            $modal.modal('show');
+            $modal.on('hidden.bs.modal', function () {
+                $modal.remove();
+            });
+        };
 
         self.tileRowEnd = ko.computed(function () {
             return Number(self.tileRowStart()) + Number(self.tileHeight());
@@ -260,6 +280,21 @@ hqDefine("app_manager/js/details/column", function () {
         }]).val(self.original.date_format);
         self.date_extra.ui.prepend($('<div/>').text(gettext(' Format ')));
 
+        self.endpointActionLabel = $('<span>Form to submit on click:</span>');
+        const formEndpointOptions = [{value: "-1", label: 'Select a form endpoint'}];
+        let moduleName = "";
+        const formEndpoints = Object.entries(initialPageData('form_endpoint_options'));
+        formEndpoints.forEach(([, endpoint]) => {
+            if (endpoint.module_name !== moduleName) {
+                moduleName = endpoint.module_name;
+                formEndpointOptions.push({groupName: `${moduleName} (${endpoint.module_case_type})`});
+            }
+            formEndpointOptions.push({value: endpoint.id, label: endpoint.form_name});
+        });
+        const selectedValue = self.original.endpoint_action_id ? self.original.endpoint_action_id : "-1";
+        self.action_form_extra = uiElement.select(formEndpointOptions)
+            .val(selectedValue);
+
         self.late_flag_extra = uiElement.input().val(self.original.late_flag.toString());
         self.late_flag_extra.ui.find('input').css('width', 'auto').css("display", "inline-block");
         self.late_flag_extra.ui.prepend($('<span>' + gettext(' Days late ') + '</span>'));
@@ -306,6 +341,7 @@ hqDefine("app_manager/js/details/column", function () {
             'format',
             'date_extra',
             'enum_extra',
+            'action_form_extra',
             'graph_extra',
             'late_flag_extra',
             'filter_xpath_extra',
@@ -322,6 +358,8 @@ hqDefine("app_manager/js/details/column", function () {
         self.horizontalAlign.subscribe(fireChange);
         self.verticalAlign.subscribe(fireChange);
         self.fontSize.subscribe(fireChange);
+        self.showBorder.subscribe(fireChange);
+        self.showShading.subscribe(fireChange);
 
         self.$format = $('<div/>').append(self.format.ui);
         self.$format.find("select").css("margin-bottom", "5px");
@@ -331,6 +369,8 @@ hqDefine("app_manager/js/details/column", function () {
             if (self.format.ui.parent().length > 0) {
                 self.date_extra.ui.detach();
                 self.enum_extra.ui.detach();
+                self.endpointActionLabel.detach();
+                self.action_form_extra.ui.detach();
                 self.graph_extra.ui.detach();
                 self.late_flag_extra.ui.detach();
                 self.filter_xpath_extra.ui.detach();
@@ -348,6 +388,18 @@ hqDefine("app_manager/js/details/column", function () {
                     self.enum_extra.values_are_icons(this.val() === 'enum-image');
                     self.enum_extra.keys_are_conditions(this.val() === 'conditional-enum');
                     self.format.ui.parent().append(self.enum_extra.ui);
+                } else if (this.val() === "clickable-icon") {
+                    self.enum_extra.values_are_icons(true);
+                    self.enum_extra.keys_are_conditions(true);
+                    self.format.ui.parent().append(self.enum_extra.ui);
+                    self.format.ui.parent().append(self.endpointActionLabel);
+                    self.format.ui.parent().append(self.action_form_extra.ui);
+                    const actionForm = self.action_form_extra.ui.find('select');
+                    actionForm.change(function () {
+                        self.action_form_extra.value = actionForm.val();
+                        fireChange();
+                    });
+                    self.action_form_extra.value = actionForm.val();
                 } else if (this.val() === "graph") {
                     // Replace format select with edit button
                     var parent = self.format.ui.parent();
@@ -391,13 +443,16 @@ hqDefine("app_manager/js/details/column", function () {
             column.format = self.format.val();
             column.date_format = self.date_extra.val();
             column.enum = self.enum_extra.getItems();
-            column.grid_x = self.tileColumnStart();
-            column.grid_y = self.tileRowStart();
+            column.endpoint_action_id = self.action_form_extra.val() === "-1" ? null : self.action_form_extra.val();
+            column.grid_x = self.tileColumnStart() - 1;
+            column.grid_y = self.tileRowStart() - 1;
             column.height = self.tileHeight();
             column.width = self.tileWidth();
             column.horizontal_align = self.horizontalAlign();
-            column.vertial_align = self.verticalAlign();
+            column.vertical_align = self.verticalAlign();
             column.font_size = self.fontSize();
+            column.show_border = self.showBorder();
+            column.show_shading = self.showShading();
             column.graph_configuration = self.format.val() === "graph" ? self.graph_extra.val() : null;
             column.late_flag = parseInt(self.late_flag_extra.val(), 10);
             column.time_ago_interval = parseFloat(self.time_ago_extra.val());

@@ -37,6 +37,11 @@ hqDefine('cloudcare/js/utils', [
 
     var showError = function (message, $el, reportToHq) {
         message = getErrorMessage(message);
+        // Make message more user friendly since html isn't useful here
+        if (message.includes('500') && message.includes('<!DOCTYPE html>')) {
+            message = 'Sorry, something went wrong. Please try again in a few minutes. ' +
+            'If this problem persists, please report it to CommCare Support.';
+        }
         _show(message, $el, null, "alert alert-danger");
         if (reportToHq === undefined || reportToHq) {
             reportFormplayerErrorToHQ({
@@ -342,26 +347,37 @@ hqDefine('cloudcare/js/utils', [
         $el.on("focusout", $el.data("DateTimePicker").hide);
     };
 
+    var smallScreenIsEnabled = function () {
+        return window.innerWidth < constants.SMALL_SCREEN_WIDTH_PX;
+    };
+
     /**
      *  Listen for screen size changes to enable or disable small screen functionality.
      *  Accepts a callback function that should take in the new value of smallScreenEnabled.
-     *  e.g.,
-     *      watchSmallScreenEnabled(enabled => {
-     *          this.smallScreenEnabled = enabled;
-     *          this.render();
-     *      });
+     *  Callback runs once initially, then every time the small screen threshold is passed.
+     *  Returns an object with two methods:
+     *      listen() initiates a jQuery event listener and runs callback once
+     *      stopListening() removes the jQuery event listener
      */
-    var watchSmallScreenEnabled = function (callback) {
-        var shouldEnableSmallScreen = () => window.innerWidth <= constants.SMALL_SCREEN_WIDTH_PX;
-        var smallScreenEnabled = shouldEnableSmallScreen();
-
-        $(window).on("resize", () => {
-            if (smallScreenEnabled !== shouldEnableSmallScreen()) {
-                smallScreenEnabled = shouldEnableSmallScreen();
+    var smallScreenListener = function (callback) {
+        var smallScreenEnabled = smallScreenIsEnabled();
+        var handleSmallScreenChange = () => {
+            var shouldEnableSmallScreen = window.innerWidth < constants.SMALL_SCREEN_WIDTH_PX;
+            if (smallScreenEnabled !== shouldEnableSmallScreen) {
+                smallScreenEnabled = shouldEnableSmallScreen;
                 callback(smallScreenEnabled);
             }
-        });
-        return smallScreenEnabled;
+        };
+
+        return {
+            listen: function () {
+                $(window).on('resize', handleSmallScreenChange);
+                callback(smallScreenEnabled);
+            },
+            stopListening: function () {
+                $(window).off('resize', handleSmallScreenChange);
+            },
+        };
     };
 
     return {
@@ -382,6 +398,7 @@ hqDefine('cloudcare/js/utils', [
         formplayerLoadingComplete: formplayerLoadingComplete,
         formplayerSyncComplete: formplayerSyncComplete,
         reportFormplayerErrorToHQ: reportFormplayerErrorToHQ,
-        watchSmallScreenEnabled: watchSmallScreenEnabled,
+        smallScreenIsEnabled: smallScreenIsEnabled,
+        smallScreenListener: smallScreenListener,
     };
 });

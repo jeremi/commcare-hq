@@ -9,7 +9,7 @@ hqDefine('users/js/edit_commcare_user', [
     'locations/js/widgets',
     'jquery-textchange/jquery.textchange',
     'hqwebapp/js/bootstrap3/knockout_bindings.ko',
-    'hqwebapp/js/widgets',
+    'hqwebapp/js/bootstrap3/widgets',
     'registration/js/password',
     'select2/dist/js/select2.full.min',
     'eonasdan-bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min',
@@ -148,7 +148,7 @@ hqDefine('users/js/edit_commcare_user', [
         $customDataFieldsForm.koApplyBindings(function () {
             return {
                 custom_fields: customDataFields.customDataFieldsEditor({
-                    metadata: initialPageData.get('metadata'),
+                    user_data: initialPageData.get('user_data'),
                     profiles: initialPageData.get('custom_fields_profiles'),
                     profile_slug: initialPageData.get('custom_fields_profile_slug'),
                     slugs: initialPageData.get('custom_fields_slugs'),

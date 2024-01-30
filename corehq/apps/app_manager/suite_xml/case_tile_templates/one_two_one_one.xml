@@ -21,6 +21,7 @@
         </xpath>
       </text>
     </template>
+    {header[endpoint_action]}
   </field>
 
   <field>
@@ -33,21 +34,6 @@
       <text>
         <xpath function="concat({map[xpath_function]}, if(here(), '', ''))"> <!-- Without the here() call sessionStorage.locationLat will not be populated -->
           {map[variables]}
-        </xpath>
-      </text>
-    </template>
-  </field>
-
-  <field>
-    <header>
-      <text>
-        <locale id="{map_popup[locale_id]}"/>
-      </text>
-    </header>
-    <template form="{map_popup[format]}" width="0">
-      <text>
-        <xpath function="{map_popup[xpath_function]}">
-          {map_popup[variables]}
         </xpath>
       </text>
     </template>
@@ -69,6 +55,7 @@
         </xpath>
       </text>
     </template>
+    {top_left[endpoint_action]}
   </field>
 
   <field>
@@ -87,6 +74,7 @@
         </xpath>
       </text>
     </template>
+    {top_right[endpoint_action]}
   </field>
 
 
@@ -106,6 +94,7 @@
         </xpath>
       </text>
     </template>
+    {middle[endpoint_action]}
   </field>
 
   <field>
@@ -124,6 +113,7 @@
         </xpath>
       </text>
     </template>
+    {bottom[endpoint_action]}
   </field>
 
 </detail>

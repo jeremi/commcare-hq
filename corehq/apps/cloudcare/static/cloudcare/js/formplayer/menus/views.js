@@ -1,4 +1,4 @@
-/*globals DOMPurify, Marionette */
+/*globals Marionette */
 
 hqDefine("cloudcare/js/formplayer/menus/views", function () {
     const kissmetrics = hqImport("analytix/js/kissmetrix"),
@@ -146,6 +146,8 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
     };
     // generate the case tile's style block and insert
     const buildCellLayout = function (tiles, styles, prefix) {
+        const borderInTile = Boolean(_.find(styles, s => s.showBorder));
+        const shadingInTile = Boolean(_.find(styles, s => s.showShading));
         const tileModels = _.chain(tiles || [])
             .map(function (tile, idx) {
                 if (tile === null || tile === undefined) {
@@ -158,6 +160,10 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                     fontStyle: tile.fontSize,
                     verticalAlign: getValidFieldAlignment(style.verticalAlign),
                     horizontalAlign: getValidFieldAlignment(style.horizontalAlign),
+                    showBorder: style.showBorder,
+                    borderInTile: borderInTile,
+                    showShading: style.showShading,
+                    shadingInTile: shadingInTile,
                 };
             })
             .filter(function (tile) {
@@ -181,7 +187,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             const heightPercentage = 100 / numColumns;
             heightString = heightPercentage + "cqw";
         } else {
-            heightString = "auto";
+            heightString = "min-content";
         }
 
         const model = {
@@ -208,19 +214,46 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
         return caseListLayout;
     };
 
+    const getScrollTopOffset = function (smallScreenEnabled, mapIsFullscreen = false) {
+        const $mapEl = $('#module-case-list-map');
+        const $stickyHeader = $('#small-screen-sticky-header');
+        let scrollTopOffset = parseInt(($mapEl).css('top'));
+        if (smallScreenEnabled) {
+            if ($stickyHeader[0]) {
+                scrollTopOffset = parseInt($stickyHeader.css('top')) + $stickyHeader.outerHeight();
+            } else if (mapIsFullscreen) {
+                scrollTopOffset = constants.BREADCRUMB_HEIGHT_PX;
+            } else {
+                scrollTopOffset += $mapEl.outerHeight();
+            }
+        }
+        return scrollTopOffset;
+    };
+
+
     const CaseView = Marionette.View.extend({
         tagName: "tr",
         template: _.template($("#case-view-item-template").html() || ""),
 
         ui: {
+            clickIcon: ".module-icon.clickable-icon",
             selectRow: ".select-row-checkbox",
+            showMore: ".show-more",
         },
 
         events: {
+            "click @ui.clickIcon": "iconClick",
+            "keydown @ui.clickIcon": "iconKeyAction",
             "click": "rowClick",
             "keydown": "rowKeyAction",
             'click @ui.selectRow': 'selectRowAction',
             'keypress @ui.selectRow': 'selectRowAction',
+            'click @ui.showMore': 'showMoreAction',
+            'keypress @ui.showMore': 'showMoreAction',
+        },
+
+        modelEvents: {
+            "change": "modelChanged",
         },
 
         initialize: function () {
@@ -231,6 +264,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                     self.ui.selectRow.prop("checked", action === constants.MULTI_SELECT_ADD);
                 }
             });
+            self.smallScreenEnabled = cloudcareUtils.smallScreenIsEnabled();
         },
 
         className: "formplayer-request case-row",
@@ -243,11 +277,95 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             };
         },
 
+        iconClick: function (e) {
+            e.stopImmediatePropagation();
+            const fieldIndex = this.getFieldIndexFromEvent(e);
+            const urlTemplate = this.options.endpointActions[fieldIndex]['urlTemplate'];
+            const isBackground = this.options.endpointActions[fieldIndex]['background'];
+            let caseId;
+            if (this.options.headerRowIndices && !$(e.target).closest('.group-rows').length) {
+                caseId = this.model.get('groupKey');
+            } else {
+                caseId = this.model.get('id');
+            }
+            // Grab endpoint id from urlTemplate
+            const temp = urlTemplate.substring(0, urlTemplate.indexOf('?') - 1);
+            const endpointId = temp.substring(temp.lastIndexOf('/') + 1);
+            const endpointArg = urlTemplate.substring(urlTemplate.indexOf('?') + 1, urlTemplate.lastIndexOf('='));
+            e.target.className += " disabled";
+            this.clickableIconRequest(e, endpointId, caseId, endpointArg, isBackground);
+        },
+
+        iconKeyAction: function (e) {
+            if (e.keyCode === 13) {
+                this.iconClick(e);
+            }
+        },
+
+        getFieldIndexFromEvent: function (e) {
+            return $(e.currentTarget).parent().parent().children('.module-case-list-column').index($(e.currentTarget).parent());
+        },
+
+        clickableIconRequest: function (e, endpointId, caseId, endpointArg, isBackground) {
+            const self = this;
+            const clickedIcon = e.target;
+            clickedIcon.classList.add("disabled");
+            clickedIcon.style.display = 'none';
+            const spinnerElement = $(clickedIcon).siblings('i');
+            spinnerElement[0].style.display = '';
+            const currentUrlToObject = formplayerUtils.currentUrlToObject();
+            currentUrlToObject.endpointArgs = {[endpointArg]: caseId};
+            currentUrlToObject.endpointId = endpointId;
+            currentUrlToObject.isBackground = isBackground;
+
+            function resetIcon() {
+                clickedIcon.classList.remove("disabled");
+                clickedIcon.style.display = '';
+                spinnerElement[0].style.display = 'none';
+            }
+
+            $.when(FormplayerFrontend.getChannel().request("icon:click", currentUrlToObject)).done(function () {
+                self.reloadCase(self.model.get('id'));
+                resetIcon();
+            }).fail(function () {
+                resetIcon();
+            });
+        },
+
+        reloadCase: function (caseId) {
+            const self = this;
+            const urlObject = formplayerUtils.currentUrlToObject();
+            urlObject.addSelection(caseId);
+            urlObject.clickedIcon = true;
+            const fetchingDetails = FormplayerFrontend.getChannel().request("entity:get:details", urlObject, false, true, true);
+            $.when(fetchingDetails).done(function (detailResponse) {
+                self.updateModelFromDetailResponse(caseId, detailResponse);
+            }).fail(function () {
+                console.log('could not get case details');
+            });
+        },
+
+        updateModelFromDetailResponse: function (caseId, detailResponse) {
+            if (detailResponse.removeCaseRow) {
+                this.destroy();
+            } else {
+                this.model.set("data", detailResponse.models[0].attributes.details);
+            }
+        },
+
+        modelChanged: function () {
+            if (!this.model.get('updating')) {
+                this.render();
+            }
+        },
+
         rowClick: function (e) {
             if (!(
                 e.target.classList.contains('module-case-list-column-checkbox') ||  // multiselect checkbox
                 e.target.classList.contains("select-row-checkbox") ||               // multiselect select all
-                $(e.target).is('a')                                                 // actual link, as in markdown
+                $(e.target).closest('a').length ||                                  // actual link, as in markdown
+                e.target.classList.contains('show-more') ||
+                $(e.target).parent().hasClass('show-more')
             )) {
                 e.preventDefault();
                 let modelId = this.model.get('id');
@@ -275,6 +393,23 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             FormplayerFrontend.trigger("multiSelect:updateCases", action, [this.model.get('id')]);
         },
 
+        showMoreAction: function (e) {
+            const arrow = $(e.currentTarget).find("i");
+            const tileContent = $(e.currentTarget).siblings('.collapsible-tile-content');
+            if (tileContent.hasClass("collapsed-tile-content")) {
+                arrow.removeClass("fa-angle-double-down");
+                arrow.addClass("fa-angle-double-up");
+                tileContent.removeClass("collapsed-tile-content");
+            } else {
+                arrow.removeClass("fa-angle-double-up");
+                arrow.addClass("fa-angle-double-down");
+                tileContent.addClass("collapsed-tile-content");
+                const offset = getScrollTopOffset(this.smallScreenEnabled);
+                $(window).scrollTop($(e.currentTarget).parent().offset().top - offset);
+            }
+
+        },
+
         isChecked: function () {
             return this.ui.selectRow.prop("checked");
         },
@@ -284,12 +419,27 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             return {
                 data: this.options.model.get('data'),
                 styles: this.options.styles,
+                headers: this.options.headers,
                 isMultiSelect: this.options.isMultiSelect,
                 renderMarkdown: markdown.render,
                 resolveUri: function (uri) {
-                    return FormplayerFrontend.getChannel().request('resourceMap', uri, appId);
+                    return FormplayerFrontend.getChannel().request('resourceMap', uri.trim(), appId);
                 },
             };
+        },
+
+        onAttach: function () {
+            const self = this;
+            if (self.isMultiSelect && self.smallScreenEnabled) {
+                const height = $(self.el).height();
+                if (height > constants.COLLAPSIBLE_TILE_MAX_HEIGHT) {
+                    const tileContent = $(self.el).find('> .collapsible-tile-content');
+                    if (tileContent.length) {
+                        tileContent.addClass('collapsed-tile-content');
+                        $(self.el).append(`<div class="show-more"><i class="fa fa-angle-double-down"></i></div>`);
+                    }
+                }
+            }
         },
     });
 
@@ -301,18 +451,31 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
 
     const CaseTileView = CaseView.extend({
         tagName: "div",
-        className: "formplayer-request list-cell-wrapper-style",
+        className: "formplayer-request list-cell-wrapper-style panel panel-default",
         template: _.template($("#case-tile-view-item-template").html() || ""),
         templateContext: function () {
             const dict = CaseTileView.__super__.templateContext.apply(this, arguments);
             dict['prefix'] = this.options.prefix;
             return dict;
         },
+
+        updateModelFromDetailResponse: function (caseId, detailResponse) {
+            if (detailResponse.removeCaseRow) {
+                this.destroy();
+            } else {
+                CaseTileView.__super__.updateModelFromDetailResponse.apply(this, [caseId, detailResponse]);
+            }
+        },
+
+        getFieldIndexFromEvent: function (e) {
+            CaseTileView.__super__.getFieldIndexFromEvent.apply(this, [e]);
+            return $(e.currentTarget).parent().index();
+        },
     });
 
     const CaseTileGroupedView = CaseTileView.extend({
         tagName: "div",
-        className: "formplayer-request list-cell-wrapper-style case-tile-group",
+        className: "formplayer-request list-cell-wrapper-style case-tile-group panel panel-default",
         template: _.template($("#case-tile-grouped-view-item-template").html() || ""),
         templateContext: function () {
             const dict = CaseTileGroupedView.__super__.templateContext.apply(this, arguments);
@@ -320,37 +483,64 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
 
             const data = this.options.model.get('data');
             const headerRowIndices = this.options.headerRowIndices;
+
             dict['indexedHeaderData'] = headerRowIndices.reduce((acc, index) => {
                 acc[index] = data[index];
                 return acc;
             }, {});
-
             dict['indexedRowDataList'] = this.getIndexedRowDataList();
 
             return dict;
         },
 
+        getFieldIndexFromEvent: function (e) {
+            const fieldIndex = CaseTileGroupedView.__super__.getFieldIndexFromEvent.apply(this, [e]);
+            if ($(e.target).closest('.group-rows').length) {
+                return this.options.bodyRowIndices[fieldIndex];
+            } else {
+                return this.options.headerRowIndices[fieldIndex];
+            }
+        },
+
         getIndexedRowDataList: function () {
             let indexedRowDataList = [];
             for (let model of this.options.groupModelsList) {
-                let indexedRowData = model.get('data')
-                    .reduce((acc, data, i) => {
-                        if (!this.options.headerRowIndices.includes(i) &&
-                            this.options.styles[i].widthHint !== 0) {
-                            acc[i] = data;
-                        }
-                        return acc;
-                    }, {});
-                if (Object.keys(indexedRowData).length !== 0) {
-                    indexedRowDataList.push(indexedRowData);
+                if (model.id === this.model.get('updatedCaseId')) {
+                    indexedRowDataList.push(this.model.get('updatedRowData'));
+                } else {
+                    let indexedRowData = model.get('data')
+                        .reduce((acc, data, i) => {
+                            if (this.options.bodyRowIndices.includes(i)) {
+                                acc[i] = data;
+                            }
+                            return acc;
+                        }, {});
+                    if (Object.keys(indexedRowData).length !== 0) {
+                        indexedRowDataList.push(indexedRowData);
+                    }
                 }
             }
             return indexedRowDataList;
         },
+
+        updateModelFromDetailResponse: function (caseId, detailResponse) {
+            if (detailResponse.removeCaseRow) {
+                this.destroy();
+            } else {
+                this.model.set('updating', true);
+                CaseTileGroupedView.__super__.updateModelFromDetailResponse.apply(this, [caseId, detailResponse]);
+                this.model.set('updatedCaseId', caseId);
+                this.model.set('updatedRowData', this.options.bodyRowIndices.reduce((acc, index) => {
+                    acc[index] = detailResponse.models[0].attributes.details[index];
+                    return acc;
+                }, {}));
+                this.model.set('updating', false);
+            }
+        },
     });
 
     const PersistentCaseTileView = CaseTileView.extend({
-        className: "formplayer-request",
+        className: "formplayer-request persistent-sticky",
         rowClick: function (e) {
             e.preventDefault();
             if (this.options.hasInlineTile) {
@@ -370,16 +560,22 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             columnHeader: '.header-clickable',
             paginationGoText: '#goText',
             casesPerPageLimit: '.per-page-limit',
+            searchMoreButton: '#search-more',
+            scrollToBottomButton: '#scroll-to-bottom',
+            mapShowHideButton: '#hide-map-button',
         };
     };
 
     const CaseListViewEvents = function () {
         return {
             'click @ui.actionButton': 'caseListAction',
+            'click @ui.mapShowHideButton': 'showHideMap',
             'click @ui.searchButton': 'caseListSearch',
             'click @ui.paginators': 'paginateAction',
             'click @ui.paginationGoButton': 'paginationGoAction',
             'click @ui.columnHeader': 'columnSortAction',
+            'click @ui.searchMoreButton': 'searchMoreAction',
+            'click @ui.scrollToBottomButton': 'scrollToBottom',
             'keypress @ui.columnHeader': 'columnSortAction',
             'change @ui.casesPerPageLimit': 'onPerPageLimitChange',
             'keypress @ui.searchTextBox': 'searchTextKeyAction',
@@ -397,6 +593,8 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
         childViewOptions: function () {
             return {
                 styles: this.options.styles,
+                headers: this.options.headers,
+                endpointActions: this.options.endpointActions,
             };
         },
 
@@ -406,6 +604,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             self.styles = options.styles;
             self.hasNoItems = options.collection.length === 0 || options.triggerEmptyCaseList;
             self.noItemsText = options.triggerEmptyCaseList ? sidebarNoItemsText : this.options.collection.noItemsText;
+            self.selectText = options.collection.selectText;
             self.headers = options.triggerEmptyCaseList ? [] : this.options.headers;
             self.redoLast = options.redoLast;
             if (sessionStorage.selectedValues !== undefined) {
@@ -420,12 +619,38 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             const addressFieldPresent = !!_.find(this.styles, function (style) { return style.displayFormat === constants.FORMAT_ADDRESS; });
 
             self.showMap = addressFieldPresent && !appPreview && !self.hasNoItems && toggles.toggleEnabled('CASE_LIST_MAP');
-            self.smallScreenEnabled = cloudcareUtils.watchSmallScreenEnabled(enabled => self.smallScreenEnabled = enabled);
+            self.smallScreenListener = cloudcareUtils.smallScreenListener(smallScreenEnabled => {
+                self.handleSmallScreenChange(smallScreenEnabled);
+            });
+            self.smallScreenListener.listen();
         },
 
         ui: CaseListViewUI(),
 
         events: CaseListViewEvents(),
+
+        handleSmallScreenChange: function (enabled) {
+            const self = this;
+            self.smallScreenEnabled = enabled;
+            if (self.options.sidebarEnabled) {
+                self.positionStickyItems(enabled);
+            }
+        },
+
+        positionStickyItems: function (smallScreenEnabled) {
+            const $caseListHeader = $('#case-list-menu-header');
+            const $caseListMap = $('#module-case-list-map');
+            const stickyHeaderId = 'small-screen-sticky-header';
+            if (smallScreenEnabled) {
+                $caseListHeader.wrap(`<div class="sticky sticky-header" id="${stickyHeaderId}"></div>`);
+                $caseListMap.appendTo($(`#${stickyHeaderId}`));
+            } else {
+                if ($caseListHeader.parent()[0] === $(`#${stickyHeaderId}`)[0]) {
+                    $caseListHeader.unwrap();
+                }
+                $caseListMap.prependTo($('#module-case-list-container__results-container'));
+            }
+        },
 
         caseListAction: function (e) {
             const index = $(e.currentTarget).data().index,
@@ -441,6 +666,20 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             e.preventDefault();
             const searchText = $('#searchText').val();
             FormplayerFrontend.trigger("menu:search", searchText);
+        },
+
+        searchMoreAction: function () {
+            if (!$('#sidebar-region').hasClass('in')) {
+                $([document.documentElement, document.body]).animate({
+                    scrollTop: $('#content-container').offset().top - constants.BREADCRUMB_HEIGHT_PX,
+                }, 350);
+            }
+        },
+
+        scrollToBottom: function () {
+            $([document.documentElement, document.body]).animate({
+                scrollTop: $('.container .pagination-container').offset().top,
+            }, 500);
         },
 
         searchTextKeyAction: function (event) {
@@ -493,6 +732,24 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             }
         },
 
+        showHideMap: function (e) {
+            const mapDiv = $('#module-case-list-map');
+            const moduleCaseList = $('#module-case-list');
+            const hideButton = $('#hide-map-button');
+            if (!mapDiv.hasClass('hide')) {
+                mapDiv.addClass('hide');
+                moduleCaseList.removeClass('col-md-7 col-md-pull-5').addClass('col-md');
+                hideButton.text(gettext('Show Map'));
+                $(e.target).attr('aria-expanded', 'false');
+            } else {
+                mapDiv.removeClass('hide');
+                moduleCaseList.addClass('col-md-7 col-md-pull-5').removeClass('col-md');
+                hideButton.text(gettext('Hide Map'));
+                $(e.target).attr('aria-expanded', 'true');
+            }
+
+        },
+
         _allCaseIds: function () {
             const caseIds = [];
             this.children.each(function (childView) {
@@ -536,19 +793,10 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
         verifySelectedCaseIdsLessThanMaxSelectValue: function () {
             if (this.selectedCaseIds.length > this.maxSelectValue) {
                 let errorMessage = _.template(gettext("You have selected more than the maximum selection limit " +
-                    "of <%= value %> . Please uncheck some values to continue."))({ value: this.maxSelectValue });
+                    "of <%- value %> . Please uncheck some values to continue."))({ value: this.maxSelectValue });
                 hqRequire(["hqwebapp/js/bootstrap3/alert_user"], function (alertUser) {
                     alertUser.alert_user(errorMessage, 'danger');
                 });
-            }
-        },
-
-        columnStyle: function () {
-            const self = this;
-            if (self.showMap) {
-                return "display: grid;grid-template-columns: [tiles] 7fr [map] 5fr;grid-template-rows: auto";
-            } else {
-                return "display: grid;grid-template-columns: [tiles] 100%;grid-template-rows: auto";
             }
         },
 
@@ -580,6 +828,21 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                     position: 'bottomright',
                 }).addTo(addressMap);
 
+                L.control.fullscreen({
+                    pseudoFullscreen: true,
+                    position: 'bottomright',
+                }).addTo(addressMap);
+
+                addressMap.on('fullscreenchange', function () {
+                    // sticky header interferes with fullscreen map; un-stick it if it exists
+                    const $stickyHeader = $('#small-screen-sticky-header');
+                    if ($stickyHeader[0]) {
+                        addressMap.isFullscreen()
+                            ? $stickyHeader.removeClass('sticky')
+                            : $stickyHeader.addClass('sticky');
+                    }
+                });
+
                 L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=' + token, {
                     id: 'mapbox/streets-v11',
                     attribution: '© <a href="https://www.mapbox.com/about/maps/">Mapbox</a> ©' +
@@ -610,6 +873,23 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                                 }
 
                                 marker.on('click', () => {
+                                    if (popupIndex < 0) {
+                                        const urlObject = formplayerUtils.currentUrlToObject();
+                                        urlObject.addSelection(model.get('id'));
+                                        const fetchingDetails = FormplayerFrontend.getChannel().request("entity:get:details", urlObject, false, false, false);
+                                        $.when(fetchingDetails).done(function (detailResponse) {
+                                            const attributes = Array.from(detailResponse)[0].attributes;
+                                            const popupIndexOnClick =
+                                                _.findIndex(attributes.styles, (style) => style.displayFormat === constants.FORMAT_ADDRESS_POPUP);
+                                            if (popupIndexOnClick >= 0) {
+                                                const popupTextOnClick = markdown.render(attributes.details[popupIndexOnClick]);
+                                                const p = L.popup().setContent(popupTextOnClick);
+                                                marker.bindPopup(p).openPopup();
+                                            }
+                                        }).fail(function () {
+                                            console.log('could not get case details');
+                                        });
+                                    }
                                     // tiles
                                     $(`.list-cell-wrapper-style[id!='${rowId}']`)
                                         .removeClass("highlighted-case");
@@ -621,9 +901,9 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                                     markers.forEach(m => m.setIcon(locationIcon));
                                     marker.setIcon(selectedLocationIcon);
 
+                                    const offset = getScrollTopOffset(this.smallScreenEnabled, addressMap.isFullscreen());
                                     $([document.documentElement, document.body]).animate({
-                                        // -50 Stay clear of the breadcrumbs
-                                        scrollTop: $(`#${rowId}`).offset().top - 50,
+                                        scrollTop: $(`#${rowId}`).offset().top - offset,
                                     }, 500);
 
                                     addressMap.panTo(markerCoordinates);
@@ -646,41 +926,65 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             }
         },
 
+        handleScroll: function () {
+            const self = this;
+            if (self.smallScreenEnabled) {
+                const $scrollButton = $('#scroll-to-bottom');
+                if (self.shouldShowScrollButton() && $scrollButton.is(':hidden')) {
+                    $scrollButton.fadeIn();
+                } else if (!self.shouldShowScrollButton() && !$scrollButton.is(':hidden')) {
+                    $scrollButton.fadeOut();
+                }
+            }
+        },
+
+        shouldShowScrollButton: function () {
+            const $pagination = $('.container .pagination-container');
+            const paginationOffscreen = $pagination[0]
+                ? $pagination.offset().top - $(window).scrollTop() > window.innerHeight : false;
+            return paginationOffscreen;
+        },
+
         onAttach() {
             const self = this;
             if (self.showMap) {
                 self.loadMap();
             }
+            self.handleSmallScreenChange(self.smallScreenEnabled);
+            self.boundHandleScroll = self.handleScroll.bind(self);
+            $(window).on('scroll', self.boundHandleScroll);
+            if (self.shouldShowScrollButton()) {
+                $('#scroll-to-bottom').show();
+            }
+        },
+
+        onBeforeDetach: function () {
+            const self = this;
+            self.smallScreenListener.stopListening();
+            $(window).off('scroll', self.boundHandleScroll);
         },
 
         templateContext: function () {
-            const paginateItems = formplayerUtils.paginateOptions(this.options.currentPage, this.options.pageCount);
-            const casesPerPage = parseInt($.cookie("cases-per-page-limit")) || 10;
-            const boldSortedCharIcon = (header) => {
-                const headerWords = header.trim().split(' ');
-                const lastChar = headerWords.pop();
-
-                return lastChar === "Λ" || lastChar === "V"
-                    ? `${headerWords.join(' ')} <b>${lastChar}</b>`
-                    : header;
-            };
+            const paginateItems = formplayerUtils.paginateOptions(
+                this.options.currentPage,
+                this.options.pageCount,
+                this.options.collection.length
+            );
+            const casesPerPage = parseInt($.cookie("cases-per-page-limit")) || (this.smallScreenEnabled ? 5 : 10);
             let description = this.options.description;
             let title = this.options.title;
             if (this.options.sidebarEnabled && this.options.collection.queryResponse) {
                 description = this.options.collection.queryResponse.description;
                 title = this.options.collection.queryResponse.title;
             }
-            return {
-                startPage: paginateItems.startPage,
+            return _.extend(paginateItems, {
                 title: title.trim(),
-                description: description === undefined ? "" : DOMPurify.sanitize(markdown.render(description.trim())),
-                headers: this.headers.map(boldSortedCharIcon),
+                description: description === undefined ? "" : markdown.render(description.trim()),
+                selectText: this.selectText === undefined ? "" : this.selectText,
+                headers: this.headers,
                 widthHints: this.options.widthHints,
                 actions: this.options.actions,
                 currentPage: this.options.currentPage,
-                endPage: paginateItems.endPage,
-                pageCount: paginateItems.pageCount,
-                rowRange: [10, 25, 50, 100],
                 limit: casesPerPage,
                 styles: this.options.styles,
                 breadcrumbs: this.options.breadcrumbs,
@@ -692,7 +996,6 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                 selectedCaseIds: this.selectedCaseIds,
                 isMultiSelect: false,
                 showMap: this.showMap,
-                columnStyle: this.columnStyle(),
                 sidebarEnabled: this.options.sidebarEnabled,
                 smallScreenEnabled: this.smallScreenEnabled,
                 triggerEmptyCaseList: this.options.triggerEmptyCaseList,
@@ -703,8 +1006,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                 columnVisible: function (index) {
                     return !(this.widthHints && this.widthHints[index] === 0);
                 },
-                pageNumLabel: _.template(gettext("Page <%-num%>")),
-            };
+            });
         },
     });
 
@@ -725,7 +1027,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
     const MultiSelectCaseListView = CaseListView.extend({
         ui: _.extend(CaseListViewUI(), {
             selectAllCheckbox: "#select-all-checkbox",
-            continueButton: "#multi-select-continue-btn",
+            continueButton: ".multi-select-continue-btn",
             continueButtonText: "#multi-select-btn-text",
         }),
 
@@ -777,7 +1079,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
     const CaseTileListView = CaseListView.extend({
         ui: _.extend(CaseListViewUI(), {
             selectAllCheckbox: "#select-all-tile-checkbox",
-            continueButton: "#multi-select-continue-btn",
+            continueButton: ".multi-select-continue-btn",
             continueButtonText: "#multi-select-btn-text",
         }),
         childView: CaseTileView,
@@ -808,6 +1110,15 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             registerContinueListener(this, options);
         },
 
+        handleSmallScreenChange: function (enabled) {
+            CaseTileListView.__super__.handleSmallScreenChange.apply(this, arguments);
+            if (enabled) {
+                $('#content-container').addClass('full-width');
+            } else if (!this.options.sidebarEnabled) {
+                $('#content-container').removeClass('full-width');
+            }
+        },
+
         childViewOptions: function () {
             const dict = CaseTileListView.__super__.childViewOptions.apply(this, arguments);
             dict.prefix = 'list';
@@ -819,6 +1130,21 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             const dict = CaseTileListView.__super__.templateContext.apply(this, arguments);
             dict.useTiles = true;
             dict.isMultiSelect = this.options.isMultiSelect;
+            dict.sortOptions = _.map(dict.sortIndices, function (sortIndex) {
+                let header = dict.headers[sortIndex],
+                    sortOrder = null,
+                    headerWords = header.trim().split(' '),
+                    lastChar = headerWords.pop();
+                if (lastChar === "Λ" || lastChar === "V") {
+                    header = headerWords.join(' ');
+                    sortOrder = lastChar;
+                }
+                return {
+                    index: sortIndex,
+                    header: header,
+                    sortOrder: sortOrder,
+                };
+            });
             return dict;
         },
 
@@ -833,6 +1159,11 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             if (this.options.isMultiSelect) {
                 this.reconcileMultiSelectUI();
             }
+        },
+
+        onBeforeDetach: function () {
+            CaseTileListView.__super__.onBeforeDetach.apply(this, arguments);
+            $('#content-container').removeClass('full-width');
         },
     });
 
@@ -853,11 +1184,18 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
                 }
             }
 
-            let groupHeaderRows = this.options.collection.groupHeaderRows;
+            const groupHeaderRows = this.options.collection.groupHeaderRows;
             // select the indices of the tile fields that are part of the header rows
-            this.headerRowIndices = this.options.collection.tiles
-                .map((tile, index) => ({tile: tile, index: index}))
-                .filter((tile) => tile.tile && tile.tile.gridY < groupHeaderRows)
+
+            const isHeaderRow = (y) => y < groupHeaderRows;
+            const tileAndIndex = this.options.collection.tiles
+                .map((tile, index) => ({tile: tile, index: index}));
+
+            this.headerRowIndices = tileAndIndex
+                .filter((tile) => tile.tile && isHeaderRow(tile.tile.gridY))
+                .map((tile) => tile.index);
+            this.bodyRowIndices = tileAndIndex
+                .filter((tile) => tile.tile && !isHeaderRow(tile.tile.gridY))
                 .map((tile) => tile.index);
         },
 
@@ -866,6 +1204,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             dict.groupHeaderRows = this.options.collection.groupHeaderRows;
             dict.groupModelsList = this.groupedModels[model.get("groupKey")];
             dict.headerRowIndices = this.headerRowIndices;
+            dict.bodyRowIndices = this.bodyRowIndices;
             return dict;
         },
     });
@@ -880,16 +1219,25 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
         template: _.template($("#breadcrumb-item-template").html() || ""),
         className: "breadcrumb-text",
         attributes: function () {
-            return {
+            let attributes = {
                 "role": "link",
                 "tabindex": "0",
+                "style": this.buildMaxWidth(),
             };
+            if (this.options.model.get('ariaCurrentPage')) {
+                attributes['aria-current'] = 'page';
+            }
+            return attributes;
         },
         events: {
             "click": "crumbClick",
             "keydown": "crumbKeyAction",
         },
-
+        buildMaxWidth: function () {
+            // to avoid overflow, compute the max width in CSS based on number of breadcrumbs
+            const crumbCount = this.model.collection.length;
+            return `max-width: calc((100vw - ${constants.BREADCRUMB_WIDTH_OFFSET_PX}px) / ${crumbCount});`;
+        },
         crumbClick: function (e) {
             e.preventDefault();
             const crumbId = this.options.model.get('id');
@@ -1005,7 +1353,7 @@ hqDefine("cloudcare/js/formplayer/menus/views", function () {
             const appId = formplayerUtils.currentUrlToObject().appId;
             return {
                 resolveUri: function (uri) {
-                    return FormplayerFrontend.getChannel().request('resourceMap', uri, appId);
+                    return FormplayerFrontend.getChannel().request('resourceMap', uri.trim(), appId);
                 },
             };
         },

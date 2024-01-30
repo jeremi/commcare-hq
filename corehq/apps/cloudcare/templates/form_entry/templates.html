@@ -3,13 +3,16 @@
 
 <script type="text/html" id="sub-group-fullform-ko-template">
   <div tabindex="-1" class ="gr" data-bind="
-        class: isRepetition ? 'repetition' : '',
+        class: elementTile,
         css: {
           'gr-no-children': $data.children().length === 0,
-          'gr-has-no-questions': _.all($data.children(), function(d) { return d.type() !== 'grouped-question-tile-row' }),
+          'gr-has-no-questions': $data.children().every(function(d) { return d.type() !== 'grouped-element-tile-row' }),
           'gr-has-no-nested-questions': !$data.hasAnyNestedQuestions(),
           'panel panel-default': collapsible,
+          'repetition': isRepetition,
           'required-group': !showChildren() && childrenRequired(),
+          'stripe-repeats': stripeRepeats,
+          'group-border': groupBorder,
         }">
     <fieldset class="gr-header" data-bind="
         css: {
@@ -27,7 +30,10 @@
                 'tabindex': isVisibleGroup() ? '0' : '-1'
               },
         click: toggleChildren,
-        event: {keypress: keyPressAction}">
+        event: {keypress: keyPressAction},
+        style: {'background-color': headerBackgroundColor(),
+                'color': headerBackgroundColor() ? 'white' : '',
+        }">
       <div data-bind="ifnot: collapsible">
         <legend>
           <span class="caption webapp-markdown-output"
@@ -46,7 +52,7 @@
               css: {'fa-angle-double-right': !showChildren(), 'fa-angle-double-down': showChildren()},
           "></i>
         </div>
-        <span class="caption" data-bind="html: caption(), attr: {id: captionId()}"></span><!-- Markdown interferes with header styling -->
+        <span class="webapp-markdown-output caption" data-bind="html: caption_markdown() || caption(), attr: {id: captionId()}"></span>
         <i class="fa fa-warning text-danger pull-right" data-bind="visible: hasError() && !showChildren()"></i>
         <button class="btn btn-danger del pull-right" href="#" data-bind="
                     visible: isRepetition,
@@ -58,8 +64,17 @@
       <div data-bind="visible: showChildren">
         <fieldset>
         <legend aria-hidden="true" class="sr-only">{% trans "Question Group" %}</legend>
-          <div class="children" data-bind="slideVisible: showChildren(), template: { name: childTemplate, foreach: $data.children,
-            afterRender: focusNewRepeat }, css: {'panel-body': collapsible}"/>
+          <div class="children" data-bind="
+              slideVisible: showChildren(),
+              template: {
+                name: childTemplate,
+                foreach: $data.children,
+                afterRender: focusNewRepeat,
+              },
+              css: {
+                'panel-body': collapsible,
+                'stripe-repeats': stripeRepeats,
+              }"></div>
         </fieldset>
       </div>
   </div>
@@ -109,7 +124,7 @@
     <div class="webforms-nav"
          data-bind="template: { name: 'form-navigation-ko-template' }"></div>
   </div>
-  <div class="container form-container js-form-container print-container" data-bind="
+  <div class="form-container js-form-container print-container" data-bind="
           css: { 'form-single-question': showInFormNavigation },
       ">
 
@@ -117,91 +132,96 @@
       <h1 class="title" data-bind="text: title, visible: !showInFormNavigation()"></h1>
     </div>
 
-    <div class="row">
-      <div class="col-sm-12">
-        <form class="form form-horizontal" data-bind="submit: submitForm">
-          <div class="question-container">
-            <div data-bind="template: { name: childTemplate, foreach: $data.children }"/>
-          </div>
-          {% if environment == "web-apps" %}
-            <div class="row" data-bind="visible: erroredQuestions().length > 0">
-              <div class="col-sm-12 alert alert-danger">
-                {% blocktrans %}
-                  Please correct the answers below before submitting.
-                  <br>
-                  You can use the <strong><i class='fa fa-fast-forward'></i> Next Error</strong> button on the left-hand side of the screen to navigate between required fields.
-                {% endblocktrans %}
-                <ul data-bind="foreach: erroredQuestions">
-                    <li>
-                        <a href="#" data-bind="click: navigateTo, html: caption_markdown() || caption() || question_id() || gettext('Unknown Question')"></a>
-                        <span data-bind="visible: serverError, text: serverError"></span>
-                        <span data-bind="if: error">
-                          <!-- ko text: error --><!-- /ko -->
-                        </span>
-                        <span data-bind="visible: !serverError() && !error()">
-                          {% trans "An answer is required." %}
-                        </span>
-                    </li>
-                </ul>
-              </div>
-            </div>
-          {% endif %}
-          <div id="submit-button" class="form-actions form-group noprint-sub-container" data-bind="visible: showSubmitButton">
-            <div data-bind="css: submitClass">
-              <button class="submit btn btn-primary"
-                     type="submit"
-                     data-bind="enable: enableSubmitButton">
-                <i class="fa fa-spin fa-refresh"
-                   data-bind="visible: !enableSubmitButton(){% if environment == "web-apps" %} && erroredQuestions.length != 0{% endif %}"
-                ></i>
-                <!-- ko text: submitText --><!-- /ko -->
-              </button>
-            </div>
-          </div>
-        </form>
+    <form class="form form-horizontal" data-bind="submit: submitForm">
+      <div class="question-container">
+        <div data-bind="template: { name: childTemplate, foreach: $data.children }"/>
       </div>
-      <div data-bind="visible: erroredQuestions().length > 0">
-        {% if environment == "web-apps" %}
-          {% if request|ui_notify_enabled:"JUMP_TO_INVALID_QUESTIONS_WEBAPPS" %}
-            <div class="alert alert-ui-notify alert-dismissible helpbubble helpbubble-purple helpbubble-bottom-left fade in"
-                 style="position: fixed; width: 300px; bottom: 65px;"
-                 data-slug="{{ "JUMP_TO_INVALID_QUESTIONS_WEBAPPS"|ui_notify_slug }}"
-                 role="alert">
-              <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-              </button>
-              <p class="lead">{% trans 'Navigate Across Required Questions' %}</p>
-              <p>
-                {% blocktrans %}
-                  You can use this button to navigate between questions that are required but missing or that contain errors.
-                  You will also see a summary of questions that need attention at the bottom of the form.
-                {% endblocktrans %}
-                <br>
-                <a target="_blank" class="btn btn-primary-dark" href="https://confluence.dimagi.com/display/commcarepublic/Using+Web+Apps#UsingWebApps-Navigatingtoallrequiredquestions">{% trans "Learn More" %}</a>
-              </p>
-            </div>
-          {% endif %}
-        {% endif %}
-        <div id="scroll-bottom" class="btn btn-danger" style="position: fixed; bottom: 35px" title="{% trans_html_attr "Jump between required/errored questions" %}" data-bind="click: jumpToErrors">
-          <i class='fa fa-fast-forward'> </i>
-              {% trans "Next Error" %}
+      {% if environment == "web-apps" %}
+        <div class="row" data-bind="visible: erroredQuestions().length > 0">
+          <div class="col-sm-12 alert alert-danger">
+            {% blocktrans %}
+              Please correct the answers below before submitting.
+              <br>
+              You can use the <strong><i class='fa fa-fast-forward'></i> Next Error</strong> button on the left-hand side of the screen to navigate between required fields.
+            {% endblocktrans %}
+            <ul data-bind="foreach: erroredQuestions">
+                <li>
+                    <a href="#" data-bind="click: navigateTo, html: caption_markdown() || caption() || question_id() || gettext('Unknown Question')"></a>
+                    <span data-bind="visible: serverError, text: serverError"></span>
+                    <span data-bind="if: error">
+                      <!-- ko text: error --><!-- /ko -->
+                    </span>
+                    <span data-bind="visible: !serverError() && !error()">
+                      {% trans "An answer is required." %}
+                    </span>
+                </li>
+            </ul>
+          </div>
+        </div>
+      {% endif %}
+      <div id="submit-button" class="form-actions form-group noprint-sub-container" data-bind="visible: showSubmitButton">
+        <div data-bind="
+          css: submitClass,
+          style: {
+            'bottom':isAnchoredSubmitStyle && {{ request.couch_user.can_edit_data|yesno:'true,false' }} ? '30px' : '' {# data preview bar #}
+          }">
+          <button class="submit btn btn-primary"
+                  type="submit"
+                  data-bind="
+                    enable: enableSubmitButton,
+                    css: {
+                      'btn-lg': !isAnchoredSubmitStyle,
+                      'btn-sm': isAnchoredSubmitStyle,
+                    }">
+            <i class="fa fa-spin fa-refresh"
+               data-bind="visible: !enableSubmitButton(){% if environment == "web-apps" %} && erroredQuestions.length != 0{% endif %}"
+            ></i>
+            <!-- ko text: submitText --><!-- /ko -->
+          </button>
         </div>
       </div>
+    </form>
+  </div>
+  <div data-bind="visible: erroredQuestions().length > 0">
+    {% if environment == "web-apps" %}
+      {% if request|ui_notify_enabled:"JUMP_TO_INVALID_QUESTIONS_WEBAPPS" %}
+        <div class="alert alert-ui-notify alert-dismissible helpbubble helpbubble-purple helpbubble-bottom-left fade in"
+             style="position: fixed; width: 300px; bottom: 65px;"
+             data-slug="{{ "JUMP_TO_INVALID_QUESTIONS_WEBAPPS"|ui_notify_slug }}"
+             role="alert">
+          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+          <p class="lead">{% trans 'Navigate Across Required Questions' %}</p>
+          <p>
+            {% blocktrans %}
+              You can use this button to navigate between questions that are required but missing or that contain errors.
+              You will also see a summary of questions that need attention at the bottom of the form.
+            {% endblocktrans %}
+            <br>
+            <a target="_blank" class="btn btn-primary-dark" href="https://confluence.dimagi.com/display/commcarepublic/Using+Web+Apps#UsingWebApps-Navigatingtoallrequiredquestions">{% trans "Learn More" %}</a>
+          </p>
+        </div>
+      {% endif %}
+    {% endif %}
+    <div id="scroll-bottom" class="btn btn-danger" style="position: fixed; bottom: 35px" title="{% trans_html_attr "Jump between required/errored questions" %}" data-bind="click: jumpToErrors">
+      <i class='fa fa-fast-forward'> </i>
+          {% trans "Next Error" %}
     </div>
   </div>
 </script>
 
 
-<script type="text/html" id="grouped-question-tile-row-fullform-ko-template">
+<script type="text/html" id="grouped-element-tile-row-fullform-ko-template">
   <div class="row">
-    <div data-bind="template: { name: childTemplate, foreach: $data.children }"/>
+    <div data-bind="template: { name: childTemplate, foreach: $data.children }" class="question-tile-row"/>
   </div>
 </script>
 
 
 <script type="text/html" id="question-fullform-ko-template">
   <div data-bind="class:questionTileWidth">
-  <!-- ko if: datatype() !== 'info' -->
+  <!-- ko if: !isLabel && !isButton -->
   <div class="q form-group" data-bind="
             css: {
                 error: error,
@@ -209,7 +229,7 @@
                 on: $root.forceRequiredVisible,
             }
         ">
-    <label class="caption control-label" data-bind="css: labelWidth, attr: {'for': entry.entryId}">
+    <label class="caption control-label" data-bind="css: labelWidth, attr: {'for': entry.entryId}, visible: hasLabelContent">
       {# appearance attributes TEXT_ALIGN_CENTER TEXT_ALIGN_RIGHT #}
       <div data-bind="css: {
           'row': help(),
@@ -252,11 +272,6 @@
       <!-- /ko -->
     </label>
     <div class="widget-container controls" data-bind="css: controlWidth">
-      <div class="loading">
-        <i class="fa fa-check text-success" data-bind="visible: clean "></i>
-        <i class="fa fa-spin fa-refresh" data-bind="visible: dirty"></i>
-        <i class="fa fa-warning text-danger clickable" data-bind="visible: hasError, click: triggerAnswer"></i>
-      </div>
       <div class="widget" data-bind="
                 template: { name: entryTemplate, data: entry, afterRender: afterRender },
                 css: { 'has-error': hasError }
@@ -284,10 +299,10 @@
                       on: $root.forceRequiredVisible,
                     }">{% trans 'Sorry, this response is required!' %}</div>
   <!-- /ko -->
-  <!-- ko if: datatype() === 'info' -->
-  <div class="info panel panel-default">
+  <!-- ko if: isLabel -->
+  <div class="form-group">
     {# appearance attributes TEXT_ALIGN_CENTER TEXT_ALIGN_RIGHT #}
-    <div class="panel-body" data-bind="css: {
+    <div class="info col-sm-12" data-bind="css: {
         'text-center': stylesContains('text-align-center'),
         'text-right': stylesContains('text-align-right'),
       }">
@@ -312,12 +327,31 @@
     </div>
   </div>
   <!-- /ko -->
+  <!-- ko if: isButton -->
+  {# appearance attributes TEXT_ALIGN_CENTER TEXT_ALIGN_RIGHT #}
+  <div class="q form-group" data-bind="
+    css: {
+      error: error,
+      'text-center': stylesContains('text-align-center'),
+      'text-right': stylesContains('text-align-right')
+    }">
+    <div class="widget-container controls col-sm-12">
+      <div class="widget" data-bind="
+        template: { name: entryTemplate, data: entry, afterRender: afterRender },
+        css: { 'has-error': hasError }
+        "></div>
+      </div>
+    </div>
+  <!-- /ko -->
   </div>
 </script>
 
 <script type="text/html" id="repeat-juncture-fullform-ko-template">
   <div class="panel panel-default rep">
-    <div class="panel-heading">
+    <div class="panel-heading" data-bind="style: {
+        'background-color': headerBackgroundColor(),
+        'color': headerBackgroundColor() ? 'white' : '',
+      }">
       <h3 class="caption" data-bind="html: header" tabindex="0"></h3>
       <span class="ix" data-bind="text: ixInfo($data)"></span>
     </div>
@@ -332,7 +366,7 @@
               data-bind="click: newRepeat"
               id="repeat-add-new">
               <i class="fa fa-plus"></i>
-              <!-- ko text: getTranslation('repeat.dialog.add.new', '{% trans_html_attr 'Add new repeat' %}') --><!-- /ko -->
+              <!-- ko text: $root.getTranslation('repeat.dialog.add.new', '{% trans_html_attr 'Add new repeat' %}') --><!-- /ko -->
       </button>
     </div>
   </div>
@@ -368,9 +402,6 @@
 </script>
 
 <script type="text/html" id="text-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="
-        text: helpText()
-    "></span>
   <textarea class="textfield form-control vertical-resize" data-bind="
         value: $data.rawAnswer,
         valueUpdate: valueUpdate,
@@ -380,13 +411,9 @@
             'aria-required': $parent.required() ? 'true' : 'false',
         },
     "></textarea>
-  <span class="help-block type" aria-hidden="true" data-bind="
-        text: helpText()
-    "></span>
 </script>
 
 <script type="text/html" id="password-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="text: helpText()"></span>
   <input type="password" class="form-control" data-bind="
         value: $data.rawAnswer,
         valueUpdate: valueUpdate,
@@ -395,13 +422,9 @@
           'aria-required': $parent.required() ? 'true' : 'false',
         },
     "/>
-  <span class="help-block type" aria-hidden="true" data-bind="text: helpText()"></span>
 </script>
 
 <script type="text/html" id="str-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="
-        text: helpText()
-    "></span>
   <input autocomplete="off" type="text" class="form-control" data-bind="
         value: $data.rawAnswer,
         valueUpdate: valueUpdate,
@@ -412,9 +435,6 @@
             'aria-required': $parent.required() ? 'true' : 'false',
         }
     "/>
-  <span class="help-block type" aria-hidden="true" data-bind="
-        text: helpText()
-    "></span>
 </script>
 <script type="text/html" id="unsupported-entry-ko-template">
   <div class="unsupported alert alert-warning">
@@ -443,7 +463,6 @@
 </script>
 
 <script type="text/html" id="file-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="text: helpText()"></span>
   <input type="file" data-bind="
         value: $data.rawAnswer,
         attr: {
@@ -452,10 +471,34 @@
             accept: accept,
         },
     "/>
-  <span class="help-block type" aria-hidden="true" data-bind="text: helpText()"></span>
+  <button class="btn btn-default btn-xs pull-right" data-bind="
+    click: onClear,
+    text: $root.getTranslation('upload.clear.title', '{% trans_html_attr 'Clear' %}'),
+  ">
+  </button>
+</script>
+
+<script type="text/html" id="signature-entry-ko-template">
+  <div data-bind="attr: { id: entryId + '-wrapper' }">
+    <canvas data-bind="
+        attr: {
+            id: entryId + '-canvas',
+            'aria-required': $parent.required() ? 'true' : 'false',
+        },
+      "
+      style="border: 1px solid #ccc; border-radius: 4px;"/>
+    </canvas>
+  </div>
   <button class="btn btn-default btn-xs pull-right" data-bind="click: onClear">
     {% trans "Clear" %}
   </button>
+  <input type="file" class="hidden" data-bind="
+      value: $data.rawAnswer,
+      attr: {
+          id: entryId,
+          accept: accept,
+      },
+    "/>
 </script>
 
 <script type="text/html" id="address-entry-ko-template">
@@ -522,11 +565,12 @@
     </div>
   </fieldset>
 </script>
+<script type="text/html" id="button-entry-ko-template">
+  <button class="btn btn-default" data-bind="click: onClick, attr: {id: entryId}">
+    <span data-bind="renderMarkdown: buttonLabel()"></span>
+  </button>
+</script>
 <script type="text/html" id="dropdown-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="
-        text: helpText(),
-        visible: helpText(),
-    "></span>
   <select class="form-control" data-bind="
         foreach: options,
         value: rawAnswer,
@@ -538,16 +582,8 @@
         ">
     <option data-bind="value: id, text: text"></option>
   </select>
-  <span class="help-block type" aria-hidden="true" data-bind="
-        text: helpText(),
-        visible: helpText(),
-    "></span>
 </script>
 <script type="text/html" id="multidropdown-entry-ko-template">
-  <span class="help-block type sr-only" data-bind="
-        text: helpText(),
-        visible: helpText(),
-    "></span>
   <select multiple class="form-control" data-bind="
         options: choices,
         selectedOptions: rawAnswer,
@@ -558,10 +594,6 @@
         valueAllowUnset: true,
         ">
   </select>
-  <span class="help-block type" aria-hidden="true" data-bind="
-        text: helpText(),
-        visible: helpText(),
-    "></span>
 </script>
 <script type="text/html" id="choice-label-entry-ko-template">
   <div class="row">
@@ -607,12 +639,10 @@
 </script>
 
 <script type="text/html" id="time-entry-ko-template">
-  <span class="help-block sr-only" data-bind="text: helpText()"></span>
   <div class="input-group">
     <input type="text" class="form-control" data-bind="attr: { id: entryId, 'aria-required': $parent.required() ? 'true' : 'false' }"/>
     <span class="input-group-addon"><i class="fa fa-clock-o"></i></span>
   </div>
-  <span class="help-block" aria-hidden="true" data-bind="text: helpText()"></span>
 </script>
 
 <script type="text/html" id="ethiopian-date-entry-ko-template">

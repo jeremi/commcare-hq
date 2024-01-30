@@ -1,4 +1,4 @@
-####### Configuration for CommCareHQ Running in docker #######
+"""####### Configuration for CommCareHQ Running in docker #######"""
 
 
 import os
@@ -101,12 +101,9 @@ WS4REDIS_CONNECTION = {
     'host': redis_host,
 }
 
-ELASTICSEARCH_HOST = 'elasticsearch2'
-ELASTICSEARCH_PORT = 9200  # ES 2 port
-ELASTICSEARCH_MAJOR_VERSION = 2
-
-if os.environ.get('ELASTICSEARCH_MAJOR_VERSION'):
-    ELASTICSEARCH_MAJOR_VERSION = int(os.environ.get('ELASTICSEARCH_MAJOR_VERSION'))
+ELASTICSEARCH_HOST = 'elasticsearch5'
+ELASTICSEARCH_PORT = 9200  # ES 5 port
+ELASTICSEARCH_MAJOR_VERSION = 5
 
 S3_BLOB_DB_SETTINGS = {
     "url": "http://minio:9980/",
@@ -134,7 +131,8 @@ SHARED_DRIVE_ROOT = '/sharedfiles'
 
 BASE_ADDRESS = '{}:8000'.format(os.environ.get('HQ_PORT_8000_TCP_ADDR', 'localhost'))
 
-######## Email setup ########
+
+"""######## Email setup ########"""
 # email settings: these ones are the custom hq ones
 EMAIL_LOGIN = "notifications@dimagi.com"
 EMAIL_PASSWORD = "******"
@@ -142,7 +140,7 @@ EMAIL_SMTP_HOST = "smtp.gmail.com"
 EMAIL_SMTP_PORT = 587
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-####### Bitly ########
+"""####### Bitly ########"""
 
 BITLY_OAUTH_TOKEN = None
 

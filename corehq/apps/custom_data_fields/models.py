@@ -132,9 +132,13 @@ class CustomDataFieldsDefinition(models.Model):
         """
         Returns a validator to be used in bulk import
         """
-        def validate_custom_fields(custom_fields):
+        def validate_custom_fields(custom_fields, profile=None):
             errors = []
-            for field in self.get_fields():
+            # Fields set via profile can be skipped since they
+            #   are valdiated when the profile is created/edited
+            skip_fields = profile.fields.keys() if profile else []
+            fields = [f for f in self.get_fields() if f.slug not in skip_fields]
+            for field in fields:
                 value = custom_fields.get(field.slug, None)
                 errors.append(field.validate_required(value))
                 errors.append(field.validate_choices(value))
@@ -183,7 +187,7 @@ class CustomDataFieldsProfile(models.Model):
             UserES().domain(self.definition.domain)
                     .mobile_users()
                     .show_inactive()
-                    .metadata(PROFILE_SLUG, self.id)
+                    .user_data(PROFILE_SLUG, self.id)
         )
 
     def to_json(self):

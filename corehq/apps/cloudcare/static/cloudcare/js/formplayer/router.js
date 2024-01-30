@@ -46,9 +46,9 @@ hqDefine("cloudcare/js/formplayer/router", function () {
             });
         },
         listMenus: function (sessionObject) {
-            var urlObject = utils.CloudcareUrl.fromJson(
-                utils.encodedUrlToObject(sessionObject || Backbone.history.getFragment())
-            );
+            var urlObject = sessionObject ?
+                utils.CloudcareUrl.fromJson(utils.encodedUrlToObject(sessionObject))
+                : utils.currentUrlToObject();
             if (!urlObject.appId) {
                 // We can't do any menu navigation without an appId
                 FormplayerFrontend.trigger("apps:list");
@@ -199,13 +199,13 @@ hqDefine("cloudcare/js/formplayer/router", function () {
         API.listMenus();
     });
 
-    FormplayerFrontend.on("menu:query", function (queryDict, selectValuesByKeys = false, sidebarEnabled) {
+    FormplayerFrontend.on("menu:query", function (queryDict, sidebarEnabled, initiatedBy) {
         var urlObject = utils.currentUrlToObject();
         var queryObject = _.extend(
             {
                 inputs: queryDict,
                 execute: true,
-                selectValuesByKeys,
+                initiatedBy: initiatedBy,
             },
             // force manual search in split screen case search for workflow compatibility
             sidebarEnabled ? { forceManualSearch: true } : {}

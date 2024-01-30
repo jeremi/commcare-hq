@@ -1,4 +1,4 @@
-/* globals moment, DOMPurify */
+/* globals moment, SignaturePad, DOMPurify */
 hqDefine("cloudcare/js/form_entry/entries", function () {
     var kissmetrics = hqImport("analytix/js/kissmetrix"),
         cloudcareUtils = hqImport("cloudcare/js/utils"),
@@ -215,17 +215,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
             return null;
         };
 
-        self.helpText = function () {
-            if (isPassword) {
-                return gettext('Password');
-            }
-            switch (self.datatype) {
-                case constants.BARCODE:
-                    return gettext('Barcode');
-                default:
-                    return gettext('Free response');
-            }
-        };
         self.enableReceiver(question, options);
     }
     FreeTextEntry.prototype = Object.create(EntrySingleAnswer.prototype);
@@ -298,13 +287,12 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                 });
             }
 
-            formEntryUtils.renderMapboxInput(
-                self.entryId,
-                self.geocoderItemCallback,
-                self.geocoderOnClearCallback,
-                initialPageData,
-                self._inputOnKeyDown
-            );
+            formEntryUtils.renderMapboxInput({
+                divId: self.entryId,
+                itemCallback: self.geocoderItemCallback,
+                clearCallBack: self.geocoderOnClearCallback,
+                inputOnKeyDown: self._inputOnKeyDown,
+            });
         };
 
         self._inputOnKeyDown = function (event) {
@@ -339,10 +327,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
             return null;
         };
 
-        self.helpText = function () {
-            return gettext('Number');
-        };
-
         self.enableReceiver(question, options);
     }
     IntEntry.prototype = Object.create(FreeTextEntry.prototype);
@@ -371,10 +355,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
             return (!(/^[+-]?\d*(\.\d+)?$/.test(rawAnswer)) ? "This does not appear to be a valid phone/numeric number" : null);
         };
 
-        this.helpText = function () {
-            return gettext('Phone number or Numeric ID');
-        };
-
         this.enableReceiver(question, options);
     }
     PhoneEntry.prototype = Object.create(FreeTextEntry.prototype);
@@ -398,10 +378,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                 return gettext("Number is too large");
             }
             return null;
-        };
-
-        this.helpText = function () {
-            return gettext('Decimal');
         };
     }
     FloatEntry.prototype = Object.create(IntEntry.prototype);
@@ -459,10 +435,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         MultiSelectEntry.call(this, question, options);
         self.templateType = 'multidropdown';
         self.placeholderText = gettext('Please choose an item');
-
-        self.helpText = function () {
-            return "";
-        };
 
         self.afterRender = function () {
             select2ify(self, {});
@@ -525,6 +497,32 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
     };
 
     /**
+     * Represents a single button that cycles through choices
+     */
+    function ButtonSelectEntry(question, options) {
+        var self = this;
+        SingleSelectEntry.call(this, question, options);
+        self.templateType = 'button';
+
+        self.buttonLabel = function () {
+            const choices = self.choices();
+            const answer = self.answer() || 0;
+            return answer < choices.length ? choices[answer] : choices[0];
+        };
+
+        self.onClick = function () {
+            const answer = self.answer();
+            if (answer && answer < self.choices().length) {
+                self.answer(answer + 1);
+            } else {
+                self.answer(1);
+            }
+        };
+    }
+    ButtonSelectEntry.prototype = Object.create(SingleSelectEntry.prototype);
+    ButtonSelectEntry.prototype.constructor = SingleSelectEntry;
+
+    /**
      * This is used for the labels and inputs in a Combined Multiple Choice question in a Question
      * List Group. It is also used for labels in a Combined Checkbox question.
      */
@@ -570,10 +568,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         self.templateType = 'dropdown';
         self.placeholderText = gettext('Please choose an item');
 
-        self.helpText = function () {
-            return "";
-        };
-
         self.options = ko.computed(function () {
             return [{text: "", id: undefined}].concat(_.map(question.choices(), function (choice, idx) {
                 return {
@@ -618,10 +612,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
 
         // Specifies the type of matching we will do when a user types a query
         self.matchType = options.matchType;
-
-        self.helpText = function () {
-            return gettext('Combobox');
-        };
 
         self.additionalSelect2Options = function () {
             return {
@@ -792,16 +782,11 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
 
     function TimeEntry(question, options) {
         this.templateType = 'time';
-        let is12Hour = false;
         if (question.style) {
             if (question.stylesContains(constants.TIME_12_HOUR)) {
                 this.clientFormat = 'h:mm a';
-                is12Hour = true;
             }
         }
-        this.helpText = function () {
-            return is12Hour ? gettext("12-hour clock") : gettext("24-hour clock");
-        };
         DateTimeEntryBase.call(this, question, options);
     }
     TimeEntry.prototype = Object.create(DateTimeEntryBase.prototype);
@@ -892,21 +877,18 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         };
         self.file = ko.observable();
         self.extensionsMap = initialPageData.get("valid_multimedia_extensions_map");
-        self.onClear = function () {
-            self.file(null);
-            self.rawAnswer(constants.NO_ANSWER);
-            self.xformAction = constants.CLEAR_ANSWER;
-            self.question.onClear();
-        };
+        // Tracks whether file entry has already been cleared, preventing an additional failing request to Formplayer
+        self.cleared = false;
     }
     FileEntry.prototype = Object.create(EntrySingleAnswer.prototype);
     FileEntry.prototype.constructor = EntrySingleAnswer;
     FileEntry.prototype.onPreProcess = function (newValue) {
         var self = this;
         if (newValue !== constants.NO_ANSWER && newValue !== "") {
-            // input has changed and validation will be checked
+            // Input has changed and validation will be checked
             if (newValue !== self.answer()) {
                 self.question.formplayerProcessed = false;
+                self.cleared = false;
             }
             self.answer(newValue.replace(constants.FILE_PREFIX, ""));
         } else {
@@ -950,6 +932,17 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
             self.question.onchange();
         }
     };
+    FileEntry.prototype.onClear = function () {
+        var self = this;
+        if (self.cleared) {
+            return;
+        }
+        self.cleared = true;
+        self.file(null);
+        self.rawAnswer(constants.NO_ANSWER);
+        self.xformAction = constants.CLEAR_ANSWER;
+        self.question.onClear();
+    };
 
     /**
      * Represents an image upload.
@@ -958,11 +951,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         var self = this;
         FileEntry.call(this, question, options);
         self.accept = "image/*,.pdf";
-
-        self.helpText = function () {
-            return gettext("Upload image");
-        };
-
     }
     ImageEntry.prototype = Object.create(FileEntry.prototype);
     ImageEntry.prototype.constructor = FileEntry;
@@ -974,11 +962,6 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         var self = this;
         FileEntry.call(this, question, options);
         self.accept = "audio/*";
-
-        self.helpText = function () {
-            return gettext("Upload audio file");
-        };
-
     }
     AudioEntry.prototype = Object.create(FileEntry.prototype);
     AudioEntry.prototype.constructor = FileEntry;
@@ -990,15 +973,59 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         var self = this;
         FileEntry.call(this, question, options);
         self.accept = "video/*";
-
-        self.helpText = function () {
-            return gettext("Upload video file");
-        };
-
     }
     VideoEntry.prototype = Object.create(FileEntry.prototype);
     VideoEntry.prototype.constructor = FileEntry;
 
+    /**
+     * Represents a signature capture, which requires the user to draw a signature.
+     */
+    function SignatureEntry(question, options) {
+        var self = this;
+        FileEntry.call(this, question, options);
+        self.templateType = 'signature';
+        self.accept = 'image/*,.pdf';
+
+        self.afterRender = function () {
+            self.$input = $('#' + self.entryId);
+            self.$canvas = $('#' + self.entryId + '-canvas');
+            self.$wrapper = $('#' + self.entryId + '-wrapper');
+
+            self.signaturePad = new SignaturePad(self.$canvas[0]);
+            self.signaturePad.addEventListener('endStroke', () => { self.answerCanvasData(); });
+
+            new ResizeObserver(() => {
+                self.resizeCanvas();
+            }).observe(self.$wrapper[0]);
+
+            self.resizeCanvas();
+        };
+
+        self.answerCanvasData = function () {
+            self.$canvas[0].toBlob(blob => {
+                var filename = blob.size + '.png', // simple filename change for validation
+                    signatureFile = new File([blob], filename, {type: "image/png"}),
+                    list = new DataTransfer();
+                list.items.add(signatureFile);
+                self.$input[0].files = list.files;
+                self.rawAnswer(constants.FILE_PREFIX + filename);
+            });
+        };
+
+        self.onClear = function () {
+            SignatureEntry.prototype.onClear.call(self);
+            if (self.signaturePad) {self.signaturePad.clear();}
+        };
+
+        self.resizeCanvas = function () {
+            var aspectRatio = 4,
+                width = self.$wrapper.width() - 2; // otherwise misaligned by 2px
+            self.$canvas[0].width = width;
+            self.$canvas[0].height = width / aspectRatio;
+        };
+    }
+    SignatureEntry.prototype = Object.create(FileEntry.prototype);
+    SignatureEntry.prototype.constructor = FileEntry;
 
     function GeoPointEntry(question, options) {
         var self = this;
@@ -1108,13 +1135,9 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         var options = {};
         var isMinimal = false;
         var isCombobox = false;
-        var isLabel = false;
+        var isButton = false;
+        var isChoiceLabel = false;
         var hideLabel = false;
-        var style;
-
-        if (question.style) {
-            style = ko.utils.unwrapObservable(question.style.raw);
-        }
 
         var displayOptions = _getDisplayOptions(question);
         var isPhoneMode = ko.utils.unwrapObservable(displayOptions.phoneMode);
@@ -1165,13 +1188,10 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                 break;
             case constants.SELECT:
                 isMinimal = question.stylesContains(constants.MINIMAL);
-                if (style) {
-                    isCombobox = question.stylesContains(constants.COMBOBOX);
-                }
-                if (style) {
-                    isLabel = question.stylesContains(constants.LABEL) || question.stylesContains(constants.LIST_NOLABEL);
-                    hideLabel = question.stylesContains(constants.LIST_NOLABEL);
-                }
+                isCombobox = question.stylesContains(constants.COMBOBOX);
+                isButton = question.stylesContains(constants.BUTTON_SELECT);
+                isChoiceLabel = question.stylesContains(constants.LABEL) || question.stylesContains(constants.LIST_NOLABEL);
+                hideLabel = question.stylesContains(constants.LIST_NOLABEL);
 
                 if (isMinimal) {
                     entry = new DropdownEntry(question, {});
@@ -1189,7 +1209,9 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                         matchType: question.style.raw().split(' ')[1],
                         receiveStyle: receiveStyle,
                     });
-                } else if (isLabel) {
+                } else if (isButton) {
+                    entry = new ButtonSelectEntry(question, {});
+                } else if (isChoiceLabel) {
                     entry = new ChoiceLabelEntry(question, {
                         hideLabel: hideLabel,
                     });
@@ -1213,14 +1235,12 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                 break;
             case constants.MULTI_SELECT:
                 isMinimal = question.stylesContains(constants.MINIMAL);
-                if (style) {
-                    isLabel = question.stylesContains(constants.LABEL);
-                    hideLabel = question.stylesContains(constants.LIST_NOLABEL);
-                }
+                isChoiceLabel = question.stylesContains(constants.LABEL);
+                hideLabel = question.stylesContains(constants.LIST_NOLABEL);
 
                 if (isMinimal) {
                     entry = new MultiDropdownEntry(question, {});
-                } else if (isLabel) {
+                } else if (isChoiceLabel) {
                     entry = new ChoiceLabelEntry(question, {
                         hideLabel: false,
                     });
@@ -1266,6 +1286,7 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
                     switch (question.control()) {
                         case constants.CONTROL_IMAGE_CHOOSE:
                             if (question.stylesContains(constants.SIGNATURE)) {
+                                entry = new SignatureEntry(question, {});
                                 break;
                             }
                             entry = new ImageEntry(question, {});
@@ -1337,6 +1358,7 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         getEntry: getEntry,
         AddressEntry: AddressEntry,
         AudioEntry: AudioEntry,
+        ButtonSelectEntry: ButtonSelectEntry,
         ComboboxEntry: ComboboxEntry,
         DateEntry: DateEntry,
         DropdownEntry: DropdownEntry,
@@ -1350,6 +1372,7 @@ hqDefine("cloudcare/js/form_entry/entries", function () {
         MultiDropdownEntry: MultiDropdownEntry,
         PhoneEntry: PhoneEntry,
         SingleSelectEntry: SingleSelectEntry,
+        SignatureEntry: SignatureEntry,
         TimeEntry: TimeEntry,
         UnsupportedEntry: UnsupportedEntry,
         VideoEntry: VideoEntry,

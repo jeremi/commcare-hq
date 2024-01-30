@@ -44,6 +44,7 @@ from corehq.apps.app_manager.suite_xml.xml_models import (
     PushFrame,
     QueryData,
     QueryPrompt,
+    QueryPromptGroup,
     RemoteRequest,
     RemoteRequestPost,
     RemoteRequestQuery,
@@ -64,6 +65,7 @@ from corehq.apps.app_manager.util import (
     module_offers_registry_search,
     module_uses_inline_search,
     module_uses_include_all_related_cases,
+    module_uses_inline_search_with_parent_relationship_parent_select,
 )
 from corehq.apps.app_manager.xpath import (
     CaseClaimXpath,
@@ -80,14 +82,16 @@ from corehq.apps.case_search.models import (
     CASE_SEARCH_BLACKLISTED_OWNER_ID_KEY,
     CASE_SEARCH_CUSTOM_RELATED_CASE_PROPERTY_KEY,
     CASE_SEARCH_REGISTRY_ID_KEY,
-    CASE_SEARCH_INCLUDE_ALL_RELATED_CASES_KEY
-
+    CASE_SEARCH_INCLUDE_ALL_RELATED_CASES_KEY,
+    CASE_SEARCH_SORT_KEY,
+    CASE_SEARCH_XPATH_QUERY_KEY,
 )
 from corehq.util.timer import time_method
 from corehq.util.view_utils import absolute_reverse
 
 # The name of the instance where search results are stored
 RESULTS_INSTANCE = 'results'
+RESULTS_INSTANCE_BASE = f'{RESULTS_INSTANCE}:'
 RESULTS_INSTANCE_INLINE = 'results:inline'
 
 # The name of the instance where search results are stored when querying a data registry
@@ -152,6 +156,9 @@ class RemoteRequestFactory(object):
                 data.exclude = self._get_multi_select_exclude()
         else:
             data.ref = QuerySessionXPath(self.case_session_var).instance()
+            if (not self.exclude_relevant
+            and module_uses_inline_search_with_parent_relationship_parent_select(self.module)):
+                data.exclude = CaseIDXPath(data.ref).case().count().neq(0)
         return data
 
     def _get_multi_select_nodeset(self):
@@ -200,17 +207,23 @@ class RemoteRequestFactory(object):
         )
 
     def build_remote_request_queries(self):
+        kwargs = {
+            "url": absolute_reverse('app_aware_remote_search', args=[self.app.domain, self.app._id]),
+            "storage_instance": self.storage_instance,
+            "template": 'case',
+            "title": self.build_title() if self.app.enable_case_search_title_translation else None,
+            "description": self.build_description() if self.module.search_config.description != {} else None,
+            "data": self._remote_request_query_datums,
+            "prompts": self.build_query_prompts(),
+            "prompt_groups": self.build_query_prompt_groups(),
+            "default_search": self.module.search_config.default_search,
+            "dynamic_search": self.app.split_screen_dynamic_search and not self.module.is_auto_select()
+        }
+        if self.module.search_config.search_on_clear and toggles.SPLIT_SCREEN_CASE_SEARCH.enabled(self.app.domain):
+            kwargs["search_on_clear"] = (self.module.search_config.search_on_clear
+                and not self.module.is_auto_select())
         return [
-            RemoteRequestQuery(
-                url=absolute_reverse('app_aware_remote_search', args=[self.app.domain, self.app._id]),
-                storage_instance=self.storage_instance,
-                template='case',
-                title=self.build_title() if self.app.enable_case_search_title_translation else None,
-                description=self.build_description() if self.module.search_config.description != {} else None,
-                data=self._remote_request_query_datums,
-                prompts=self.build_query_prompts(),
-                default_search=self.module.search_config.default_search,
-            )
+            RemoteRequestQuery(**kwargs)
         ]
 
     def build_remote_request_datums(self):
@@ -281,12 +294,37 @@ class RemoteRequestFactory(object):
                     ref="'true'",
                 )
             )
+        if self.module.search_config.custom_sort_properties:
+            refs = []
+            for sort_property in self.module.search_config.custom_sort_properties:
+                direction = '-' if sort_property.direction == 'descending' else '+'
+                sort_type = sort_property.sort_type or 'exact'
+                refs.append(f"{direction}{sort_property.property_name}:{sort_type}")
+            datums.append(
+                QueryData(
+                    key=CASE_SEARCH_SORT_KEY,
+                    ref=f"'{','.join(refs)}'",
+                )
+            )
+        if module_uses_inline_search_with_parent_relationship_parent_select(self.module):
+            parent_module_id = self.module.parent_select.module_id
+            parent_module = self.app.get_module_by_unique_id(parent_module_id)
+            parent_case_type = parent_module.case_type
+            datums.append(
+                QueryData(
+                    key=CASE_SEARCH_XPATH_QUERY_KEY,
+                    ref=f"\"ancestor-exists(parent, @case_type='{parent_case_type}')\""
+                )
+            )
+
         return datums
 
     def build_query_prompts(self):
         prompts = []
-        for prop in self.module.search_config.properties:
+        prompt_properties = [prop for prop in self.module.search_config.properties if not prop.is_group]
+        for prop in prompt_properties:
             text = Text(locale_id=id_strings.search_property_locale(self.module, prop.name))
+
             if prop.hint:
                 display = Display(
                     text=text,
@@ -339,7 +377,20 @@ class RemoteRequestFactory(object):
                     )
                     for i, validation in enumerate(prop.validations)
                 ]
+            if prop.group_key:
+                kwargs['group_key'] = prop.group_key
             prompts.append(QueryPrompt(**kwargs))
+        return prompts
+
+    def build_query_prompt_groups(self):
+        prompts = []
+        prompt_group_properties = [prop for prop in self.module.search_config.properties if prop.is_group]
+        for prop in prompt_group_properties:
+            text = Text(locale_id=id_strings.search_property_locale(self.module, prop.group_key))
+            prompts.append(QueryPromptGroup(**{
+                'key': prop.group_key,
+                'display': Display(text=text)
+            }))
         return prompts
 
     def build_stack(self):
@@ -426,7 +477,7 @@ class SessionEndpointRemoteRequestFactory(RemoteRequestFactory):
     def get_post_relevant(self):
         xpath = CaseClaimXpath(self.case_session_var)
         if self.module.is_multi_select():
-            return xpath.multi_select_relevant()
+            return xpath.multi_case_relevant()
         return xpath.default_relevant()
 
     def build_command(self):

@@ -15,6 +15,10 @@
   }
 }
 
+.module-column-name {
+  margin: 0 10px 0 10px;
+}
+
 .badge-container {
   position: relative;
   > .badge {
@@ -96,14 +100,6 @@
   width: 48%;
 }
 
-.query-caption.required .control-label::before {
-  content: '*';
-  font-weight: bold;
-  color: #c0392b;
-  margin: 0 3px;
-  float: left;
-}
-
 .module-table .module-case-list-header {
   background-color: @cc-brand-low;
   color: white;
@@ -145,17 +141,19 @@
 }
 
 .module-go-container {
-  margin: 17px;
-  width: 190px;
+  margin-top: 17px;
 }
 
 .pagination-container {
   width: inherit;
+  padding-left: 17px;
+  padding-right: 17px;
+  min-height: 76px;
 }
 
 .module-per-page-container {
   display: inline-block;
-  margin: 17px;
+  margin-top: 17px;
 }
 
 .module-table-case-list tbody tr:hover .module-case-list-column-empty {

@@ -124,21 +124,25 @@ def summarize_user_counts(commcare_users_by_domain, n):
 
 def get_domains_to_update_es_filter():
     """
-    Returns ES filter to filter domains that are never updated or
-        domains that haven't been updated since a week or domains that
-        have been updated within last week but have new form submissions
-        in the last day.
+    Returns ES filter to obtain domains that are active, and meet one or more
+    of the following criteria:
+     - never had calculated properties updated
+     - calculated properties was updated over one week ago
+     - new form submissions within the last day
     """
     last_week = datetime.utcnow() - timedelta(days=7)
     more_than_a_week_ago = filters.date_range('cp_last_updated', lt=last_week)
-    less_than_a_week_ago = filters.date_range('cp_last_updated', gte=last_week)
     not_updated = filters.missing('cp_last_updated')
     domains_submitted_today = (FormES().submitted(gte=datetime.utcnow() - timedelta(days=1))
         .terms_aggregation('domain.exact', 'domain').size(0).run().aggregations.domain.keys)
-    return filters.OR(
-        not_updated,
-        more_than_a_week_ago,
-        filters.AND(less_than_a_week_ago, filters.term('name', domains_submitted_today))
+    is_domain_active = filters.term('is_active', True)
+    return filters.AND(
+        is_domain_active,
+        filters.OR(
+            not_updated,
+            more_than_a_week_ago,
+            filters.term('name', domains_submitted_today)
+        )
     )
 
 
@@ -166,25 +170,22 @@ def export_all_rows_task(ReportClass, report_state, recipient_list=None, subject
     file = report.excel_response
     report_class = report.__class__.__module__ + '.' + report.__class__.__name__
 
-    if report.domain is None:
-        # Some HQ-wide reports (e.g. accounting/smsbillables) will not have a domain associated with them
-        # This uses the user's first domain to store the file in the blobdb
-        report.domain = report.request.couch_user.get_domains()[0]
+    # Some HQ-wide reports (e.g. accounting/smsbillables) will not have a domain associated with them
+    # This uses the user's first domain to store the file in the blobdb
+    report_storage_domain = report.request.couch_user.get_domains()[0] if report.domain is None else report.domain
 
-    hash_id = _store_excel_in_blobdb(report_class, file, report.domain, report.slug)
+    hash_id = _store_excel_in_blobdb(report_class, file, report_storage_domain, report.slug)
     logger.info(f'Stored report {report.name} with parameters: {report_state["request_params"]} in hash {hash_id}')
     if not recipient_list:
         recipient_list = [report.request.couch_user.get_email()]
     for recipient in recipient_list:
-        _send_email(report.request.couch_user, report, hash_id, recipient=recipient, subject=subject)
+        link = absolute_reverse("export_report", args=[report_storage_domain, str(hash_id), report.export_format])
+        _send_email(report, link, recipient=recipient, subject=subject)
         logger.info(f'Sent {report.name} with hash {hash_id} to {recipient}')
 
 
-def _send_email(user, report, hash_id, recipient, subject=None):
-    link = absolute_reverse("export_report", args=[report.domain, str(hash_id),
-                                                   report.export_format])
-
-    send_report_download_email(report.name, recipient, link, subject)
+def _send_email(report, link, recipient, subject=None):
+    send_report_download_email(report.name, recipient, link, subject, domain=report.domain)
 
 
 def _store_excel_in_blobdb(report_class, file, domain, report_slug):

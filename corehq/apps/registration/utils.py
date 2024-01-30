@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from django.conf import settings
 from django.db import transaction
@@ -18,17 +18,9 @@ from dimagi.utils.name_to_url import name_to_url
 from dimagi.utils.web import get_ip, get_url_base, get_static_url_prefix
 
 from corehq.apps.accounting.models import (
-    DEFAULT_ACCOUNT_FORMAT,
     BillingAccount,
-    BillingAccountType,
     BillingContactInfo,
-    Currency,
-    DefaultProductPlan,
-    PreOrPostPay,
-    SoftwarePlanEdition,
-    Subscription,
     SubscriptionAdjustmentMethod,
-    SubscriptionType,
 )
 from corehq.apps.accounting.utils.subscription import ensure_community_or_paused_subscription
 from corehq.apps.analytics.tasks import (
@@ -37,11 +29,13 @@ from corehq.apps.analytics.tasks import (
 )
 from corehq.apps.domain.exceptions import ErrorInitializingDomain
 from corehq.apps.domain.models import Domain
+from corehq.apps.hqmedia.models import LogoForSystemEmailsReference
 from corehq.apps.hqwebapp.tasks import send_html_email_async, send_mail_async
 from corehq.apps.registration.models import RegistrationRequest
 from corehq.apps.registration.tasks import send_domain_registration_email
 from corehq.apps.users.models import CouchUser, WebUser
 from corehq.util.view_utils import absolute_reverse
+from corehq.toggles import USE_LOGO_IN_SYSTEM_EMAILS
 
 APPCUES_APP_SLUGS = ['health', 'agriculture', 'wash']
 
@@ -236,7 +230,8 @@ def send_new_request_update_email(user, requesting_ip, entity_name, entity_type=
     if is_new_sso_user:
         message = f"A new SSO user just requested a {entity_texts[0]} called {entity_name}."
     elif is_confirming:
-        message = "A (basically) brand new user just confirmed his/her account. The %s requested was %s." % (entity_texts[0], entity_name)
+        message = "A (basically) brand new user just confirmed his/her account. The %s requested was %s." % (
+            entity_texts[0], entity_name)
     elif is_new_user:
         message = "A brand new user just requested a %s called %s." % (entity_texts[0], entity_name)
     else:
@@ -258,13 +253,30 @@ You can view the %s here: %s""" % (
         recipients = settings.NEW_DOMAIN_RECIPIENTS
         send_mail_async.delay(
             "New %s: %s" % (entity_texts[0], entity_name),
-            message, settings.SERVER_EMAIL, recipients
+            message, recipients, from_email=settings.SERVER_EMAIL
         )
     except Exception:
         logging.warning("Can't send email, but the message was:\n%s" % message)
 
 
-def send_mobile_experience_reminder(recipient, full_name):
+def project_logo_emails_context(domain, couch_user=None):
+    if couch_user:
+        user_domains = getattr(couch_user, 'domains', None)
+        if user_domains:
+            domain = user_domains[0]
+    if domain and USE_LOGO_IN_SYSTEM_EMAILS.enabled(domain):
+        try:
+            image_reference = LogoForSystemEmailsReference.objects.get(domain=domain)
+            return {
+                "base_container_template": "registration/email/base_templates/_base_container_project_logo.html",
+                "link_to_logo": image_reference.full_url_to_image()
+            }
+        except LogoForSystemEmailsReference.DoesNotExist:
+            pass
+    return {}
+
+
+def send_mobile_experience_reminder(recipient, full_name, additional_email_context={}):
     url = absolute_reverse("login")
 
     params = {
@@ -272,6 +284,7 @@ def send_mobile_experience_reminder(recipient, full_name):
         "url": url,
         'url_prefix': get_static_url_prefix(),
     }
+    params.update(additional_email_context)
     message_plaintext = render_to_string(
         'registration/email/mobile_signup_reminder.txt', params)
     message_html = render_to_string(

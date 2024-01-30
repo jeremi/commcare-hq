@@ -6,6 +6,7 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
     "hqwebapp/js/initial_page_data",
     "hqwebapp/js/bootstrap5/alert_user",
     "analytix/js/google",
+    "es6!hqwebapp/js/bootstrap5_loader",
     "hqwebapp/js/hq_extensions.jquery",
     "jquery.cookie/jquery.cookie",
 ], function (
@@ -15,7 +16,8 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
     modernizr,
     initialPageData,
     alertUser,
-    googleAnalytics
+    googleAnalytics,
+    bootstrap
 ) {
     var eventize = function (that) {
         'use strict';
@@ -85,9 +87,9 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
     ko.bindingHandlers.runOnInit = {
         // suggestion from https://github.com/knockout/knockout/issues/2446 to use
         // instead of an anonymous template
-        init: function(elem, valueAccessor) {
+        init: function (elem, valueAccessor) {
             valueAccessor();
-        }
+        },
     };
     ko.virtualElements.allowedBindings.runOnInit = true;
 
@@ -95,11 +97,11 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
         // fixes an issue where we try to apply bindings to a parent element
         // that has a child element with existing bindings.
         // see: https://github.com/knockout/knockout/issues/1922
-        init: function(elem, valueAccessor) {
+        init: function (elem, valueAccessor) {
             // Let bindings proceed as normal *only if* my value is false
             var shouldAllowBindings = ko.unwrap(valueAccessor());
             return { controlsDescendantBindings: !shouldAllowBindings };
-        }
+        },
     };
     ko.virtualElements.allowedBindings.allowDescendantBindings = true;
 
@@ -115,10 +117,7 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
             $.postGo(action, $.unparam(data));
         });
 
-        $(".button", $elem).button().wrap('<span />');
-        $("input[type='submit']", $elem).button();
         $("input[type='text'], input[type='password'], textarea", $elem);
-        $('.container', $elem).addClass('ui-widget ui-widget-content');
         $('.config', $elem).wrap('<div />').parent().addClass('container block ui-corner-all');
 
         $('.hq-help-template').each(function () {
@@ -383,7 +382,12 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
         $(window).on('beforeunload', beforeUnloadCallback);
         initBlock($("body"));
 
-        $('#modalTrial30Day').modal('show');
+        var trialModalElement = $('#modalTrial30Day'),
+            trialModal;
+        if (trialModalElement.length) {
+            trialModal = new bootstrap.Modal(trialModalElement);
+            trialModal.show();
+        }
 
         $(document).on('click', '.track-usage-link', function (e) {
             var $link = $(e.currentTarget),
@@ -409,15 +413,25 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
             var alertCookie = 'alerts_maintenance';
             var closedAlerts = $.cookie(alertCookie) ? JSON.parse($.cookie(alertCookie)) : [];
 
+            var viewedDomainAlertsCookie = 'viewed_domain_alerts';
+            var viewedDomainAlerts = $.cookie(viewedDomainAlertsCookie) ? JSON.parse($.cookie(viewedDomainAlertsCookie)) : [];
+
+            var setUpAlert = function (alert, alertList, alertCookieName) {
+                var id = $(alert).data('id');
+                if (!alertList.includes(id)) {
+                    $(alert).removeClass('hide');
+                    $(alert).on('click', '.close', function () {
+                        alertList.push(id);
+                        $.cookie(alertCookieName, JSON.stringify(alertList), { expires: 7, path: '/', secure: initialPageData.get('secure_cookies') });
+                    });
+                }
+            };
             _.each($maintenance,
                 function (alert) {
-                    var id = $(alert).data('id');
-                    if (!closedAlerts.includes(id)) {
-                        $(alert).removeClass('hide');
-                        $(alert).on('click', '.close', function () {
-                            closedAlerts.push(id);
-                            $.cookie(alertCookie, JSON.stringify(closedAlerts), { expires: 7, path: '/', secure: initialPageData.get('secure_cookies') });
-                        });
+                    if ($(alert).data('created-by-domain')) {
+                        setUpAlert(alert, viewedDomainAlerts, viewedDomainAlertsCookie);
+                    } else {
+                        setUpAlert(alert, closedAlerts, alertCookie);
                     }
                 }
             );
@@ -449,8 +463,13 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
         // EULA modal
         var eulaCookie = "gdpr_rollout";
         if (!$.cookie(eulaCookie)) {
-            var $modal = $("#eulaModal");
-            if ($modal.length) {
+            var eulaModalElement = $("#eulaModal"),
+                eulaModal;
+            if (eulaModalElement.length) {
+                eulaModal = new bootstrap.Modal(eulaModalElement, {
+                    keyboard: false,
+                    backdrop: 'static',
+                });
                 $("body").addClass("has-eula");
                 $("#eula-agree").click(function () {
                     $(this).disableButton();
@@ -458,7 +477,7 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
                         url: initialPageData.reverse("agree_to_eula"),
                         method: "POST",
                         success: function () {
-                            $("#eulaModal").modal('hide');
+                            eulaModal.hide();
                             $("body").removeClass("has-eula");
                         },
                         error: function (xhr) {
@@ -474,21 +493,22 @@ hqDefine('hqwebapp/js/bootstrap5/main', [
                         },
                     });
                 });
-                $modal.modal({
-                    keyboard: false,
-                    backdrop: 'static',
-                });
             }
         }
 
         // CDA modal
         _.each($(".remote-modal"), function (modal) {
-            var $modal = $(modal);
-            $modal.on("show show.bs.modal", function () {
+            var remoteModalElement = $(modal),
+                remoteModal;
+            if (remoteModalElement.length === 0) {
+                return;
+            }
+            remoteModal = new bootstrap.Modal(remoteModalElement);
+            remoteModal.on("show.bs.modal", function () {
                 $(this).find(".fetched-data").load($(this).data("url"));
             });
-            if ($modal.data("showOnPageLoad")) {
-                $modal.modal('show');
+            if (remoteModalElement.data("showOnPageLoad")) {
+                remoteModal.show();
             }
         });
     });

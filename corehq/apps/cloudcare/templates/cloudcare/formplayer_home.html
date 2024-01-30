@@ -88,6 +88,7 @@
   {% registerurl 'report_formplayer_error' request.domain %}
   {% registerurl 'report_sentry_error' request.domain %}
   {% registerurl 'dialer_view' request.domain %}
+  {% registerurl 'api_histogram_metrics' request.domain %}
   {% if integrations.gaen_otp_enabled %}
     {% registerurl 'gaen_otp_view' request.domain %}
   {% endif %}
@@ -105,16 +106,16 @@
       <div class="container case-tile-container">
         <div id="persistent-case-tile" class="print-container"></div>
       </div>
-      <div id="content-container" class="container flex-container">
-        <div id="sidebar-region" class="container noprint-sub-container flex-child flex-child-sidebar"></div>
-        <div id="menu-region" class="container print-container flex-child flex-child-menu"></div>
+      <div id="content-container" class="container">
+        <div id="sidebar-region" class="noprint-sub-container"></div>
+        <div id="menu-region" class="print-container"></div>
+        <section id="webforms" data-bind="
+                  template: {
+                      name: 'form-fullform-ko-template',
+                      afterRender: afterRender
+                  }">
+        </section>
       </div>
-      <section id="webforms" data-bind="
-                template: {
-                    name: 'form-fullform-ko-template',
-                    afterRender: afterRender
-                }">
-      </section>
     </div>
     <div role="region" id="sr-notification-region" class="sr-only" aria-live="assertive" aria-relevant="all"></div>
     <small id="version-info"></small>

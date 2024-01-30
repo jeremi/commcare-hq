@@ -5,7 +5,6 @@ import re
 import subprocess
 from collections import defaultdict
 from pathlib import Path
-from uuid import uuid4
 from shutil import copyfile
 from subprocess import call
 
@@ -122,7 +121,8 @@ def _confirm_or_exit():
         if confirm[0].lower() != 'y':
             exit()
     confirm = input("You are running locally. Have you already run "
-                    "`./manage.py collectstatic --noinput && ./manage.py compilejsi18n` (y/n)? ")
+                    "`./manage.py resource_static && ./manage.py collectstatic "
+                    "--noinput && ./manage.py compilejsi18n` (y/n)? ")
     if confirm[0].lower() != 'y':
         exit()
 
@@ -144,31 +144,24 @@ def _r_js(local=False, verbose=False, bootstrap_version=None):
 
     html_files, local_js_dirs = _get_html_files_and_local_js_dirs(local)
 
-    # These applications do not support the setup with Bootstrap 5 requirejs-babel.
-    # As the Bootstrap 5 migration continues, the intent should be to remove the
-    # applications from this list as they are migrated.
-    apps_that_do_not_support_bootstrap5_yet = [
-        "openmrs/js",
-        "dhis2/js",
-        "repeaters/js",
-        "scheduling/js",
-        "hqadmin/js",
-        "userreports/js",
-        "fixtures/js",
-        "app_manager/js",
-        "app_manager/js/summary",
-        "export/js",
-    ]
+    # These applications are in the process of undergoing a Bootstrap 5 migration. The format is as follows...
+    # "<bundle directory>": [<files to exclude from bootstrap 3 build>]
+    split_bundles = {
+        "hqwebapp/js": ['hqwebapp/js/500'],
+    }
 
     # For each directory, add an optimized "module" entry including all of the main modules in that dir.
     # For each of these entries, r.js will create an optimized bundle of these main modules and all their
     # dependencies
     dirs_to_js_modules = _get_main_js_modules_by_dir(html_files)
     for directory, mains in dirs_to_js_modules.items():
-        if is_bootstrap5 and directory in apps_that_do_not_support_bootstrap5_yet:
+        if is_bootstrap5 and directory not in split_bundles:
             continue
+        if not is_bootstrap5 and directory in split_bundles:
+            mains = mains.difference(split_bundles[directory])
         config['modules'].append({
-            'name': os.path.join(directory, "bundle"),
+            'name': (os.path.join(directory, "bootstrap5.bundle") if is_bootstrap5
+                     else os.path.join(directory, "bundle")),
             'exclude': [
                 f'hqwebapp/js/{bootstrap_version}/common',
                 f'hqwebapp/js/{bootstrap_version}/base_main',
@@ -242,7 +235,7 @@ def _get_main_js_modules_by_dir(html_files):
                 main = match.group(1)
                 directory = match.group(2)
                 if os.path.exists(os.path.join(ROOT_DIR, 'staticfiles', main + '.js')):
-                    if not re.search(r'/spec/', main):
+                    if '/spec/' not in main:
                         dirs[directory].add(main)
     return dirs
 

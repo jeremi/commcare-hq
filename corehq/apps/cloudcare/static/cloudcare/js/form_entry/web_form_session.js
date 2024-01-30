@@ -363,7 +363,8 @@ hqDefine("cloudcare/js/form_entry/web_form_session", function () {
 
         self.updateXformAction = function (q) {
             if (q.entry.xformAction === constants.CLEAR_ANSWER) {
-                q.entry.xformAction = q.entry.templateType === "file" ? constants.ANSWER_MEDIA : constants.ANSWER;
+                q.entry.xformAction = (q.entry.templateType === "file" || q.entry.templateType === "signature")
+                    ? constants.ANSWER_MEDIA : constants.ANSWER;
             }
         };
 
@@ -436,7 +437,7 @@ hqDefine("cloudcare/js/form_entry/web_form_session", function () {
         };
 
         self.deleteRepeat = function (repetition) {
-            var juncture = formUI.getIx(repetition.parent);
+            var juncture = formUI.getIx(repetition.parent.parent);
             var repIx = +(repetition.rel_ix().replace(/_/g, ':').split(":").slice(-1)[0]);
             this.serverRequest(
                 {

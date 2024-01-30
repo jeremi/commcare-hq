@@ -106,13 +106,26 @@
       {% endcompress %}
     {% endif %}
 
-    {% if request.use_datatables and not use_bootstrap5 %}
-      {% compress css %}
-        <link type="text/css"
-              rel="stylesheet"
-              media="all"
-              href="{% static 'datatables-bootstrap3/BS3/assets/css/datatables.css' %}" />
-      {% endcompress %}
+    {% if request.use_datatables %}
+      {% if use_bootstrap5 %}
+        {% compress css %}
+          <link type="text/css"
+                rel="stylesheet"
+                media="all"
+                href="{% static 'datatables.net-bs5/css/dataTables.bootstrap5.min.css' %}" />
+          <link type="text/css"
+                rel="stylesheet"
+                media="all"
+                href="{% static 'datatables.net-fixedcolumns-bs5/css/fixedColumns.bootstrap5.min.css' %}" />
+        {% endcompress %}
+      {% else %}
+        {% compress css %}
+          <link type="text/css"
+                rel="stylesheet"
+                media="all"
+                href="{% static 'datatables-bootstrap3/BS3/assets/css/datatables.css' %}" />
+        {% endcompress %}
+      {% endif %}
     {% endif %}
 
     {% if request.use_multiselect %}
@@ -135,6 +148,10 @@
         <link rel="stylesheet" href="{% static 'reports/css/maps.css' %}" />
       {% endcompress %}
     {% endif %}
+
+    <script>
+      window.USE_BOOTSTRAP5 = {{ use_bootstrap5|BOOL }};
+    </script>
 
     {% if not requirejs_main %}
       {% javascript_libraries use_bootstrap5=use_bootstrap5 underscore=True jquery_ui=request.use_jquery_ui ko=True hq=True analytics=True %}
@@ -359,12 +376,21 @@
       {% endcompress %}
     {% endif %}
 
-    {% if request.use_datatables and not requirejs_main and not use_bootstrap5 %}
-      {% compress js %}
-        <script src="{% static 'datatables.net/js/jquery.dataTables.min.js' %}"></script>
-        <script src="{% static 'datatables-fixedcolumns/js/dataTables.fixedColumns.js' %}"></script>
-        <script src="{% static 'datatables-bootstrap3/BS3/assets/js/datatables.js' %}"></script>
-      {% endcompress %}
+    {% if request.use_datatables and not requirejs_main %}
+      {% if use_bootstrap5 %}
+        {% compress js %}
+          <script src="{% static 'datatables.net/js/jquery.dataTables.min.js' %}"></script>
+          <script src="{% static 'datatables.net-bs5/js/dataTables.bootstrap5.min.js' %}"></script>
+          <script src="{% static 'datatables.net-fixedcolumns/js/dataTables.fixedColumns.min.js' %}"></script>
+          <script src="{% static 'datatables.net-fixedcolumns-bs5/js/fixedColumns.bootstrap5.min.js' %}"></script>
+        {% endcompress %}
+      {% else %}
+        {% compress js %}
+          <script src="{% static 'datatables.net/js/jquery.dataTables.min.js' %}"></script>
+          <script src="{% static 'datatables-fixedcolumns/js/dataTables.fixedColumns.js' %}"></script>
+          <script src="{% static 'datatables-bootstrap3/BS3/assets/js/datatables.js' %}"></script>
+        {% endcompress %}
+      {% endif %}
     {% endif %}
 
     {% if request.use_typeahead and not requirejs_main and not use_bootstrap5 %}
@@ -409,7 +435,11 @@
 
     {% if request.use_ko_validation and not requirejs_main %}
       <script src="{% static 'knockout-validation/dist/knockout.validation.min.js' %}"></script>
-      <script src="{% static 'hqwebapp/js/validators.ko.js' %}"></script>
+      {% if use_bootstrap5 %}
+        <script src="{% static 'hqwebapp/js/bootstrap5/validators.ko.js' %}"></script>
+      {% else %}
+        <script src="{% static 'hqwebapp/js/bootstrap3/validators.ko.js' %}"></script>
+      {% endif %}
     {% endif %}
 
     {% if is_demo_visible %}

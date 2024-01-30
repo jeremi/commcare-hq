@@ -58,7 +58,8 @@ class SessionEndpointTests(SimpleTestCase, TestXmlMixin):
             """
            <partial>
                 <endpoint id="case_list">
-                    <argument id="selected_cases" instance-id="selected_cases" instance-src="jr://instance/selected-entities"/>
+                    <argument id="selected_cases" instance-id="selected_cases"
+                        instance-src="jr://instance/selected-entities"/>
                     <stack>
                         <push>
                             <instance-datum id="selected_cases" value="$selected_cases"/>
@@ -519,9 +520,10 @@ class SessionEndpointTests(SimpleTestCase, TestXmlMixin):
                     <stack>
                         <push>
                              <command value="'m0'"/>
-                             <query id="results:inline" value="http://localhost:8000/a/test-domain/phone/case_fixture/None/">
+                             <query id="results:inline"
+                                value="http://localhost:8000/a/test-domain/phone/case_fixture/None/">
                                <data key="case_type" ref="'mother'"/>
-                               <data key="case_id" ref="instance('commcaresession')/session/data/case_id"/>
+                               <data key="case_id" ref="$case_id"/>
                              </query>
                             <datum id="case_id" value="$case_id"/>
                         </push>
@@ -552,11 +554,13 @@ class SessionEndpointTests(SimpleTestCase, TestXmlMixin):
             """
            <partial>
                 <endpoint id="case_list">
-                    <argument id="selected_cases" instance-id="selected_cases" instance-src="jr://instance/selected-entities"/>
+                    <argument id="selected_cases" instance-id="selected_cases"
+                        instance-src="jr://instance/selected-entities"/>
                     <stack>
                         <push>
                              <command value="'m0'"/>
-                             <query id="results:inline" value="http://localhost:8000/a/test-domain/phone/case_fixture/None/">
+                             <query id="results:inline"
+                                value="http://localhost:8000/a/test-domain/phone/case_fixture/None/">
                                <data key="case_type" ref="'mother'"/>
                                <data key="case_id" nodeset="instance('selected_cases')/results/value" ref="."/>
                              </query>
@@ -604,7 +608,8 @@ class SessionEndpointTests(SimpleTestCase, TestXmlMixin):
             """
             <partial>
                 <remote-request>
-                    <post relevant="count(instance('casedb')/casedb/case[@case_id=instance('commcaresession')/session/data/case_id]) = 0" url="http://localhost:8000/a/test-domain/phone/claim-case/">
+                    <post relevant="count(instance('casedb')/casedb/case[@case_id=instance('commcaresession')/session/data/case_id]) = 0"
+                        url="http://localhost:8000/a/test-domain/phone/claim-case/">
                         <data key="case_id" ref="instance('commcaresession')/session/data/case_id"/>
                     </post>
                     <command id="claim_command.my_shadow.case_id">
@@ -626,6 +631,36 @@ class SessionEndpointTests(SimpleTestCase, TestXmlMixin):
         )
 
         del self.factory.app.modules[0]
+
+    def test_session_endpoint_respect_relevancy_on_followup_form(self):
+        self.form.session_endpoint_id = 'my_form'
+        self.form.respect_relevancy = False
+        self.factory.form_requires_case(self.form, case_type=self.parent_case_type)
+        with patch('corehq.util.view_utils.get_url_base') as get_url_base_patch:
+            get_url_base_patch.return_value = 'https://www.example.com'
+            suite = self.factory.app.create_suite()
+        self.assertXmlPartialEqual(
+            """
+            <partial>
+                <endpoint id="my_form" respect-relevancy="false">
+                    <argument id="case_id"/>
+                    <stack>
+                        <push>
+                            <datum id="case_id" value="$case_id"/>
+                            <command value="'claim_command.my_form.case_id'"/>
+                        </push>
+                        <push>
+                            <command value="'m0'"/>
+                            <datum id="case_id" value="$case_id"/>
+                            <command value="'m0-f0'"/>
+                        </push>
+                    </stack>
+                </endpoint>
+            </partial>
+            """,
+            suite,
+            "./endpoint",
+        )
 
 
 @patch_validate_xform()

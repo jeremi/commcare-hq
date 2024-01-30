@@ -692,7 +692,7 @@ CASE_LIST_CUSTOM_XML = StaticToggle(
 
 CASE_LIST_CUSTOM_VARIABLES = StaticToggle(
     'case_list_custom_variables',
-    'Show text area for entering custom variables',
+    'Show editor for entering custom variables',
     TAG_SOLUTIONS_LIMITED,
     [NAMESPACE_DOMAIN],
     description='Defines custom variables that can be used in case list or detail calculations',
@@ -724,6 +724,15 @@ CASE_LIST_MAP = StaticToggle(
     [NAMESPACE_DOMAIN],
     help_link='https://confluence.dimagi.com/pages/viewpage.action?'
               'spaceKey=saas&title=Allow+Configuration+of+Case+List+Tiles',
+)
+
+CASE_LIST_LAZY = StaticToggle(
+    'case_list_lazy',
+    'USH: Add option to lazy load case list',
+    TAG_CUSTOM,
+    [NAMESPACE_DOMAIN],
+    help_link='https://confluence.dimagi.com/pages/viewpage.action?'
+              'spaceKey=saas&title=Allow+Configuration+of+Case+List+Lazy',
 )
 
 SHOW_PERSIST_CASE_CONTEXT_SETTING = StaticToggle(
@@ -940,6 +949,13 @@ WEB_APPS_UPLOAD_QUESTIONS = FeatureRelease(
     owner='Jenny Schweers',
 )
 
+WEB_APPS_ANCHORED_SUBMIT = StaticToggle(
+    'web_apps_anchored_submit',
+    'USH: Keep submit button anchored at the bottom of screen for forms in Web Apps',
+    TAG_CUSTOM,
+    namespaces=[NAMESPACE_DOMAIN],
+)
+
 SYNC_SEARCH_CASE_CLAIM = StaticToggle(
     'search_claim',
     'Enable synchronous mobile searching and case claiming',
@@ -1003,12 +1019,14 @@ GEOCODER_AUTOLOAD_USER_LOCATION = StaticToggle(
 
 GEOCODER_USER_PROXIMITY = StaticToggle(
     "geocoder_user_proximity",
-    "USH: Set the geocoder widget's proximity based on the user's location.",
+    "USH: Adjust geo coder result to be more relevant to user and project.",
     TAG_CUSTOM,
     namespaces=[NAMESPACE_DOMAIN],
     description="""
-    This has the effect of getting search results that are closer to the user's location. This will override
-    the domains default proximity setting ("Default project location").
+    This has two effects on getting geo coder search results:
+    1. Based on the bounding box of the project default location all result falling outside of it
+       will be filtered out when used in the case search.
+    2. Proximity to the users location will be taken into account for the results order.
     """,
     parent_toggles=[USH_CASE_CLAIM_UPDATES],
 )
@@ -1419,7 +1437,7 @@ SMS_LOG_CHANGES = StaticToggle(
 EXPORT_DATA_SOURCE_DATA = StaticToggle(
     'export_data_source_data',
     'Add Export Data Source Data page',
-    TAG_CUSTOM,
+    TAG_SOLUTIONS_LIMITED,
     [NAMESPACE_USER, NAMESPACE_DOMAIN],
     description="Add the Export Data Source Data page to the Data tab",
 )
@@ -1437,6 +1455,13 @@ MESSAGE_LOG_METADATA = StaticToggle(
     'Include message id in Message Log export.',
     TAG_CUSTOM,
     [NAMESPACE_USER],
+)
+
+RICH_TEXT_EMAILS = StaticToggle(
+    'rich_text_emails',
+    'Enable sending rich text HTML emails in conditional alerts and broadcasts',
+    TAG_CUSTOM,
+    [NAMESPACE_DOMAIN],
 )
 
 RUN_AUTO_CASE_UPDATES_ON_SAVE = StaticToggle(
@@ -1591,14 +1616,6 @@ EMWF_WORKER_ACTIVITY_REPORT = StaticToggle(
     ),
 )
 
-DD_CASE_DATA = StaticToggle(
-    'dd_case_data',
-    'Data Dictionary Case Data Page',
-    TAG_INTERNAL,
-    [NAMESPACE_USER],
-    description='Experimental: render the case data page in accordance with the data dictionary',
-)
-
 SORT_CALCULATION_IN_CASE_LIST = StaticToggle(
     'sort_calculation_in_case_list',
     'Configure a custom xpath calculation for Sort Property in Case Lists',
@@ -1686,6 +1703,14 @@ SESSION_ENDPOINTS = StaticToggle(
     [NAMESPACE_DOMAIN],
     description='Support external Android apps calling in to an endpoint in a '
                 'CommCare app. (Used by the Reminders App)',
+)
+
+CASE_LIST_CLICKABLE_ICON = StaticToggle(
+    'case_list_clickable_icon',
+    'USH: Allow use of clickable icons in the case list in Web Apps to trigger auto submitting forms',
+    TAG_CUSTOM,
+    [NAMESPACE_DOMAIN],
+    parent_toggles=[SESSION_ENDPOINTS]
 )
 
 SUMOLOGIC_LOGS = DynamicallyPredictablyRandomToggle(
@@ -2439,6 +2464,37 @@ SHOW_OWNER_LOCATION_PROPERTY_IN_REPORT_BUILDER_TOGGLE = StaticToggle(
     description='This can be used to create report builder reports that are location-safe.'
 )
 
+LOCATION_RESTRICTED_SCHEDULED_REPORTS = StaticToggle(
+    'location_restricted_scheduled_reports',
+    'Allows access to report scheduling views for location restricted users',
+    TAG_CUSTOM,
+    namespaces=[NAMESPACE_DOMAIN],
+    description='Provides access to views for resport scheduling '
+                'such as schedule creation and deletion.'
+)
+
+CUSTOM_EMAIL_GATEWAY = StaticToggle(
+    'custom_email_gateway',
+    'Allows user to define custom email gateway that can be used to send emails from HQ',
+    TAG_CUSTOM,
+    [NAMESPACE_DOMAIN],
+    help_link=('https://confluence.dimagi.com/display/USH/'
+               'Allow+user+to+define+custom+email+gateway+that+'
+               'can+be+used+to+send+emails+from+HQ'),
+)
+
+ALLOW_WEB_APPS_RESTRICTION = StaticToggle(
+    'allow_web_apps_restriction',
+    'Makes domain eligible to be restricted from using web apps/app preview.',
+    tag=TAG_SAAS_CONDITIONAL,
+    namespaces=[NAMESPACE_DOMAIN],
+    description="""
+    When enabled, the domain is eligible to be restricted from using web apps/app preview. The intention is
+    to only enable this for domains in extreme cases where their formplayer restores are resource intensive
+    to the point where they can degrade web apps performance for the entire system.
+    """
+)
+
 
 class FrozenPrivilegeToggle(StaticToggle):
     """
@@ -2636,4 +2692,21 @@ DATA_DICTIONARY = FrozenPrivilegeToggle(
     namespaces=[NAMESPACE_DOMAIN],
     description='Project level data dictionary of cases',
     help_link='https://confluence.dimagi.com/display/commcarepublic/Data+Dictionary'
+)
+
+
+CUSTOM_DOMAIN_BANNER_ALERTS = StaticToggle(
+    slug='custom_domain_banners',
+    label='Allow projects to add banners for their users on HQ',
+    tag=TAG_CUSTOM,
+    namespaces=[NAMESPACE_DOMAIN],
+    description='Allow projects to add banners visible to their users on HQ on every login',
+)
+
+USE_LOGO_IN_SYSTEM_EMAILS = StaticToggle(
+    slug='use_logo_in_system_emails',
+    label='Use the project\'s logo in emails sent from HQ',
+    tag=TAG_CUSTOM,
+    namespaces=[NAMESPACE_DOMAIN],
+    description='The project logo replaces the CommCare logo.',
 )

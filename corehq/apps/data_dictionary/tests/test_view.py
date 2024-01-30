@@ -31,7 +31,10 @@ class UpdateCasePropertyViewTest(TestCase):
         cls.case_type_obj = CaseType(name='caseType', domain=cls.domain_name)
         cls.case_type_obj.save()
         CaseProperty(case_type=cls.case_type_obj, name='property').save()
-        CasePropertyGroup(case_type=cls.case_type_obj, name='group').save()
+
+        group = CasePropertyGroup(case_type=cls.case_type_obj, name='group')
+        group.id = 1
+        group.save()
 
     @classmethod
     def tearDownClass(cls):
@@ -173,8 +176,7 @@ class UpdateCasePropertyViewTest(TestCase):
 
     def test_update_with_group_name(self):
         prop = self._get_property()
-        self.assertEqual(prop.group, '')
-        self.assertIsNone(prop.group_obj)
+        self.assertIsNone(prop.group)
         post_data = {
             "groups": '[{"id": 1, "caseType": "caseType", "name": "group", "description": ""}]',
             "properties": '[{"caseType": "caseType", "name": "property", "group": "group"}]'
@@ -182,14 +184,13 @@ class UpdateCasePropertyViewTest(TestCase):
         response = self.client.post(self.url, post_data)
         self.assertEqual(response.status_code, 200)
         prop = self._get_property()
-        self.assertEqual(prop.group, 'group')
-        self.assertIsNotNone(prop.group_obj)
+        self.assertEqual(prop.group.name, 'group')
+        self.assertIsNotNone(prop.group)
 
     def test_update_with_no_group_name(self):
         prop = self._get_property()
         group = CasePropertyGroup.objects.filter(case_type=self.case_type_obj, name='group').first()
-        prop.group = group.name
-        prop.group_obj = group
+        prop.group = group
         prop.save()
         post_data = {
             "groups": '[]',
@@ -198,8 +199,7 @@ class UpdateCasePropertyViewTest(TestCase):
         response = self.client.post(self.url, post_data)
         self.assertEqual(response.status_code, 200)
         prop = self._get_property()
-        self.assertEqual(prop.group, '')
-        self.assertIsNone(prop.group_obj)
+        self.assertIsNone(prop.group)
 
 
 @privilege_enabled(privileges.DATA_DICTIONARY)
@@ -330,20 +330,23 @@ class DataDictionaryJsonTest(TestCase):
         cls.couch_user.save()
         cls.case_type_obj = CaseType(name='caseType', domain=cls.domain_name)
         cls.case_type_obj.save()
-        cls.case_prop_group_obj = CasePropertyGroup(case_type=cls.case_type_obj, name='group')
-        cls.case_prop_group_obj.save()
+        cls.case_prop_group = CasePropertyGroup(case_type=cls.case_type_obj, name='group')
+        cls.case_prop_group.save()
         cls.case_prop_obj = CaseProperty(
             case_type=cls.case_type_obj,
             name='property',
             data_type='number',
-            group_obj=cls.case_prop_group_obj
+            group=cls.case_prop_group
         )
         cls.case_prop_obj.save()
+        cls.deprecated_case_type_obj = CaseType(name='depCaseType', domain=cls.domain_name, is_deprecated=True)
+        cls.deprecated_case_type_obj.save()
         cls.client = Client()
 
     @classmethod
     def tearDownClass(cls):
         cls.case_type_obj.delete()
+        cls.deprecated_case_type_obj.delete()
         cls.couch_user.delete(cls.domain_name, deleted_by=None)
         cls.domain.delete()
         super(DataDictionaryJsonTest, cls).tearDownClass()
@@ -351,23 +354,16 @@ class DataDictionaryJsonTest(TestCase):
     def setUp(self):
         self.endpoint = reverse('data_dictionary_json', args=[self.domain_name])
 
-    def test_no_access(self):
-        response = self.client.get(self.endpoint)
-        self.assertEqual(response.status_code, 302)
-
-    @patch('corehq.apps.data_dictionary.views.get_case_type_app_module_count', return_value={})
-    def test_get_json_success(self, *args):
-        self.client.login(username='test', password='foobar')
-        response = self.client.get(self.endpoint)
-        self.assertEqual(response.status_code, 200)
-        expected_response = {
+    @classmethod
+    def _get_case_type_json(self, with_deprecated=False):
+        expected_output = {
             "case_types": [
                 {
                     "name": "caseType",
                     "fhir_resource_type": None,
                     "groups": [
                         {
-                            "id": self.case_prop_group_obj.id,
+                            "id": self.case_prop_group.id,
                             "name": "group",
                             "description": "",
                             "deprecated": False,
@@ -388,8 +384,43 @@ class DataDictionaryJsonTest(TestCase):
                     "is_deprecated": False,
                     "module_count": 0,
                     "properties": [],
-                }
+                },
             ],
             "geo_case_property": GPS_POINT_CASE_PROPERTY,
         }
+        if with_deprecated:
+            expected_output['case_types'].append(
+                {
+                    "name": "depCaseType",
+                    "fhir_resource_type": None,
+                    "groups": [
+                        {
+                            "name": '',
+                            "properties": []
+                        },
+                    ],
+                    "is_deprecated": True,
+                    "module_count": 0,
+                    "properties": [],
+                }
+            )
+        return expected_output
+
+    def test_no_access(self):
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 302)
+
+    @patch('corehq.apps.data_dictionary.views.get_case_type_app_module_count', return_value={})
+    def test_get_json_success(self, *args):
+        self.client.login(username='test', password='foobar')
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 200)
+        expected_response = self._get_case_type_json()
+        self.assertEqual(response.json(), expected_response)
+
+    @patch('corehq.apps.data_dictionary.views.get_case_type_app_module_count', return_value={})
+    def test_get_json_success_with_deprecated_case_types(self, *args):
+        self.client.login(username='test', password='foobar')
+        response = self.client.get(self.endpoint, data={'load_deprecated_case_types': 'true'})
+        expected_response = self._get_case_type_json(with_deprecated=True)
         self.assertEqual(response.json(), expected_response)

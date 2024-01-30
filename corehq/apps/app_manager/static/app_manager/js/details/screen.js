@@ -12,14 +12,15 @@
  * @param options
  */
 hqDefine("app_manager/js/details/screen", function () {
-    var Utils = hqImport('app_manager/js/details/utils'),
-        ColumnModel = hqImport("app_manager/js/details/column");
+    const Utils = hqImport('app_manager/js/details/utils'),
+        ColumnModel = hqImport("app_manager/js/details/column"),
+        uiMapList = hqImport("hqwebapp/js/ui_elements/bootstrap3/ui-element-key-val-list");
 
-    var getPropertyTitle = function (property) {
+    const getPropertyTitle = function (property) {
         // Strip "<prefix>:" before converting to title case.
         // This is aimed at prefixes like ledger: and attachment:
         property = property || '';
-        var i = property.indexOf(":");
+        const i = property.indexOf(":");
         return Utils.toTitleCase(property.substring(i + 1));
     };
 
@@ -28,6 +29,7 @@ hqDefine("app_manager/js/details/screen", function () {
         var i,
             columns;
         hqImport("hqwebapp/js/bootstrap3/main").eventize(self);
+        self.moduleId = options.moduleId;
         self.type = spec.type;
         self.saveUrl = options.saveUrl;
         self.config = config;
@@ -72,33 +74,24 @@ hqDefine("app_manager/js/details/screen", function () {
         self.caseTileFieldsForTemplate = ko.computed(function () {
             return (self.caseTileTemplateConfigs[self.caseTileTemplate()] || {}).fields;
         });
-        self.caseTilePreviewForTemplate = ko.computed(function () {
+        self.caseTilePreviewColumns = ko.computed(function () {
             const grid = (self.caseTileTemplateConfigs[self.caseTileTemplate()] || {}).grid;
-            if (!grid) {
-                return "";
-            }
-            return "<div class='case-tile-preview'>" + _.map(grid, (values, fieldName) => {
-                return _.template(`<div class='case-tile-preview-mapping'
-                                        style='
-                                            grid-area: <%= rowStart %> / <%= columnStart %> / <%= rowEnd %> / <%= columnEnd %>;
-                                        '>
-                                          <div style='
-                                            justify-self: <%= horzAlign %>;
-                                            text-align: <%= horzAlign %>;
-                                            align-self: <%= vertAlign %>;
-                                          '>
-                                            <%= field %>
-                                          </div>
-                                        </div>`)({
-                    rowStart: values.y + 1,
-                    columnStart: values.x + 1,
-                    rowEnd: values.y + values.height + 1,
-                    columnEnd: values.x + values.width + 1,
-                    horzAlign: values["horz-align"],
-                    vertAlign: values["vert-align"],
-                    field: fieldName,
+            if (grid) {
+                return _.map(grid, function (value, key) {
+                    return {
+                        showInTilePreview: true,
+                        horizontalAlign: value["horz-align"],
+                        verticalAlign: value["vert-align"],
+                        tileRowStart: value.y + 1,
+                        tileRowEnd: value.y + value.height + 1,
+                        tileColumnStart: value.x + 1,
+                        tileColumnEnd: value.x + value.width + 1,
+                        tileContent: key,
+                    };
                 });
-            }).join("") + "</div>";
+            }
+
+            return self.columns();
         });
         self.showCaseTileConfigColumns = ko.computed(function () {
             const featureFlag = hqImport('hqwebapp/js/toggles').toggleEnabled('CASE_LIST_TILE_CUSTOM');
@@ -119,11 +112,16 @@ hqDefine("app_manager/js/details/screen", function () {
 
         self.customVariablesViewModel = {
             enabled: hqImport('hqwebapp/js/toggles').toggleEnabled('CASE_LIST_CUSTOM_VARIABLES'),
-            xml: ko.observable(detail.custom_variables || ""),
+            dict: detail.custom_variables_dict || {},
         };
-        self.customVariablesViewModel.xml.subscribe(function () {
+        const customDataEditor = uiMapList.new(`${ self.moduleId }-${self.columnKey}`, gettext("Edit Custom Variables"));
+        customDataEditor.val(self.customVariablesViewModel.dict);
+        customDataEditor.on("change", function () {
+            self.customVariablesViewModel.dict = this.val();
             self.fireChange();
         });
+        $(`#custom-variables-editor-${self.columnKey}`).append(customDataEditor.ui);
+
         self.multiSelectEnabled = ko.observable(detail.multi_select);
         self.multiSelectEnabled.subscribe(function () {
             self.autoSelectEnabled(self.multiSelectEnabled() && self.autoSelectEnabled());
@@ -406,6 +404,18 @@ hqDefine("app_manager/js/details/screen", function () {
             self.initColumnAsColumn(self.columns()[i]);
         }
 
+        self.caseTileRowMax = ko.computed(() => _.max([self.columns().length + 1, 7]));
+        self.caseTileRowMax.subscribe(function (newValue) {
+            self.updateTileRowMaxForColumns(newValue);
+        });
+
+        self.updateTileRowMaxForColumns = function (newValue) {
+            _.each(self.columns(), function (column) {
+                column.tileRowMax(newValue);
+            });
+        };
+        self.updateTileRowMaxForColumns(self.caseTileRowMax());
+
         self.saveButton = hqImport("hqwebapp/js/bootstrap3/main").initSaveButton({
             unsavedMessage: gettext('You have unsaved detail screen configurations.'),
             save: function () {
@@ -614,7 +624,7 @@ hqDefine("app_manager/js/details/screen", function () {
             if (self.containsCustomXMLConfiguration) {
                 data.custom_xml = self.config.customXMLViewModel.xml();
             }
-            data[self.columnKey + '_custom_variables'] = self.customVariablesViewModel.xml();
+            data[self.columnKey + '_custom_variables_dict'] = JSON.stringify(self.customVariablesViewModel.dict);
             data.multi_select = self.multiSelectEnabled();
             data.auto_select = self.autoSelectEnabled();
             data.max_select_value = self.maxSelectValue();

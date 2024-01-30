@@ -6,7 +6,6 @@ from collections import defaultdict, namedtuple
 from datetime import datetime
 import pytz
 
-from django.conf import settings
 from django.core.cache import cache
 from django.db.transaction import atomic
 from django.http import Http404
@@ -383,7 +382,7 @@ def is_query_too_big(domain, mobile_user_and_group_slugs, request_user):
     return user_es_query.count() > USER_QUERY_LIMIT
 
 
-def send_report_download_email(title, recipient, link, subject=None):
+def send_report_download_email(title, recipient, link, subject=None, domain=None):
     if subject is None:
         subject = _("%s: Requested export excel data") % title
     body = "The export you requested for the '%s' report is ready.<br>" \
@@ -394,7 +393,8 @@ def send_report_download_email(title, recipient, link, subject=None):
         subject,
         recipient,
         _(body) % (title, "<a href='%s'>%s</a>" % (link, link)),
-        email_from=settings.DEFAULT_FROM_EMAIL
+        domain=domain,
+        use_domain_gateway=True,
     )
 
 
@@ -577,11 +577,20 @@ def update_tableau_user(domain, username, role=None, groups=[], session=None):
         for local_tableau_user in [user] + get_matching_tableau_users_from_other_domains(user):
             local_tableau_user.role = role
             local_tableau_user.save()
-    _update_user_remote(session, user, domain, groups=groups)
+
+    # Group management
+    allowed_groups_for_domain = get_allowed_tableau_groups_for_domain(domain)
+    existing_groups = _group_json_to_tuples(session.get_groups_for_user_id(user.tableau_user_id))
+    edited_groups_list = list(filter(lambda group: group.name in allowed_groups_for_domain, groups))
+    other_groups = [group for group in existing_groups if group.name not in allowed_groups_for_domain]
+    # The list of groups for the user should be a combination of those edited by the web admin and the existing
+    # groups the user belongs to that are not editable on that domain.
+    new_groups = edited_groups_list + other_groups
+
+    _update_user_remote(session, user, groups=new_groups)
 
 
-def _update_user_remote(session, user, domain, groups=[]):
-    groups = list(filter(lambda group: group.name in get_allowed_tableau_groups_for_domain(domain), groups))
+def _update_user_remote(session, user, groups=[]):
     new_id = session.update_user(user.tableau_user_id, role=user.role, username=tableau_username(user.username))
     for local_tableau_user in [user] + get_matching_tableau_users_from_other_domains(user):
         local_tableau_user.tableau_user_id = new_id
@@ -610,7 +619,9 @@ def _get_hq_group_id(session):
 def sync_all_tableau_users():
     domains_grouped_by_server = defaultdict(list)  # Looks like {(server name, tableau site): [domains]...}
     for domain in TABLEAU_USER_SYNCING.get_enabled_domains():
-        server = TableauServer.objects.get(domain=domain)
+        server = TableauConnectedApp.get_server(domain)
+        if not server:
+            continue
         server_details = (server.server_name, server.target_site)
         domains_grouped_by_server[server_details].append(domain)
     for list_of_domains_for_server in domains_grouped_by_server.values():
@@ -664,7 +675,6 @@ def sync_tableau_users_on_domains(domains):
                 _update_user_remote(
                     session,
                     local_user,
-                    domain,
                     groups=_group_json_to_tuples(session.get_groups_for_user_id(local_user.tableau_user_id))
                 )
 

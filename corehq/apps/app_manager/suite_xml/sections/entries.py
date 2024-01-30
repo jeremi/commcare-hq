@@ -2,15 +2,19 @@
 EntriesContributor
 ------------------
 
-This is the largest and most complex of the suite sections, responsible for generating an ``<entry>``
-element for each form, including the datums required for form entry. The ``EntriesHelper``, which does all of the
-heavy lifting here, is imported into other places in HQ that need to know what datums a form requires,
-such as the session schema generator for form builder and the UI for form linking.
+This is the largest and most complex of the suite sections, responsible
+for generating an ``<entry>`` element for each form, including the
+datums required for form entry. The ``EntriesHelper``, which does all
+of the heavy lifting here, is imported into other places in HQ that
+need to know what datums a form requires, such as the session schema
+generator for form builder and the UI for form linking.
 
-When forms work with multiple datums, they need to be named in a way that is predictable for app builders, who
-reference them inside forms. This is most relevant to the "select parent first" feature and to parent/child
-modules.  See ``update_refs`` and ``rename_other_id``, both inner functions in ``add_parent_datums``, plus
-`this comment`_ on matching parent and child datums.
+When forms work with multiple datums, they need to be named in a way
+that is predictable for app builders, who reference them inside forms.
+This is most relevant to the "select parent first" feature and to
+parent/child modules.  See ``update_refs`` and ``rename_other_id``,
+both inner functions in ``add_parent_datums``, plus `this comment`_ on
+matching parent and child datums.
 
 
 .. _this comment: https://github.com/dimagi/commcare-hq/blob/c9fa01d1ccbb73d8f07fefbe56a0bbe1dbe231f8/corehq/apps/app_manager/suite_xml/sections/entries.py#L966-L971
@@ -23,7 +27,7 @@ import attr
 from memoized import memoized
 
 from corehq.apps.app_manager import id_strings
-from corehq.apps.app_manager.const import USERCASE_ID, USERCASE_TYPE
+from corehq.apps.app_manager.const import CASE_LIST_FILTER_LOCATIONS_FIXTURE, USERCASE_ID, USERCASE_TYPE
 from corehq.apps.app_manager.exceptions import (
     FormNotFoundException,
     ParentModuleReferenceError,
@@ -34,6 +38,7 @@ from corehq.apps.app_manager.util import (
     module_loads_registry_case,
     module_offers_search,
     module_uses_inline_search,
+    module_uses_inline_search_with_parent_relationship_parent_select,
 )
 from corehq.apps.app_manager.xform import (
     autoset_owner_id_for_advanced_action,
@@ -41,9 +46,11 @@ from corehq.apps.app_manager.xform import (
     autoset_owner_id_for_subcase,
 )
 from corehq.apps.app_manager.xpath import (
+    CaseClaimXpath,
     CaseIDXPath,
     ItemListFixtureXpath,
     ProductInstanceXpath,
+    LocationInstanceXpath,
     UsercaseXPath,
     XPath,
     interpolate_xpath,
@@ -241,6 +248,28 @@ class EntriesHelper(object):
         )
         return (using_inline_search or sync_on_form_entry) and not loads_registry_case
 
+    def add_post_to_entry(self, form, module, e):
+        from ..post_process.remote_requests import (
+            QuerySessionXPath,
+            RemoteRequestFactory,
+        )
+        case_session_var = self.get_case_session_var_for_form(form)
+        storage_instance = module.search_config.get_instance_name() if module_uses_inline_search(module) \
+            else 'casedb'
+        remote_request_factory = RemoteRequestFactory(
+            None, module, [], case_session_var=case_session_var, storage_instance=storage_instance,
+            exclude_relevant=case_search_sync_cases_on_form_entry_enabled_for_domain(self.app.domain))
+        e.post = remote_request_factory.build_remote_request_post()
+        if module_uses_inline_search_with_parent_relationship_parent_select(module):
+            case_datum_ids = [form_datum.datum.id for form_datum in self.get_case_datums_basic_module(module, form)
+                     if (form_datum.datum.id != case_session_var and not form_datum.is_new_case_id)]
+            for case_datum_id in case_datum_ids:
+                data = QueryData(key='case_id')
+                data.ref = QuerySessionXPath(case_datum_id).instance()
+                data.exclude = CaseIDXPath(data.ref).case().count().neq(0)
+                e.post.data.append(data)
+            e.post.relevant = CaseClaimXpath.multi_case_relevant()
+
     def entry_for_module(self, module):
         # avoid circular dependency
         from corehq.apps.app_manager.models import AdvancedModule, Module
@@ -253,17 +282,7 @@ class EntriesHelper(object):
                 from ..features.mobile_ucr import get_report_context_tile_datum
                 e.datums.append(get_report_context_tile_datum())
             if form.requires_case() and self.include_post_in_entry(module.get_or_create_unique_id()):
-                case_session_var = self.get_case_session_var_for_form(form)
-                from ..post_process.remote_requests import (
-                    RESULTS_INSTANCE_INLINE,
-                    RemoteRequestFactory,
-                )
-                storage_instance = RESULTS_INSTANCE_INLINE if module_uses_inline_search(module) \
-                    else 'casedb'
-                remote_request_factory = RemoteRequestFactory(
-                    None, module, [], case_session_var=case_session_var, storage_instance=storage_instance,
-                    exclude_relevant=case_search_sync_cases_on_form_entry_enabled_for_domain(self.app.domain))
-                e.post = remote_request_factory.build_remote_request_post()
+                self.add_post_to_entry(form, module, e)
 
             # Ideally all of this version check should happen in Command/Display class
             if self.app.enable_localized_menu_media:
@@ -587,10 +606,14 @@ class EntriesHelper(object):
 
             fixture_select_filter = ''
             if datum['module'].fixture_select.active:
+                if datum['module'].fixture_select.fixture_type == CASE_LIST_FILTER_LOCATIONS_FIXTURE:
+                    nodeset = LocationInstanceXpath().instance()
+                else:
+                    nodeset = ItemListFixtureXpath(datum['module'].fixture_select.fixture_type).instance()
                 datums.append(FormDatumMeta(
                     datum=SessionDatum(
                         id=id_strings.fixture_session_var(datum['module']),
-                        nodeset=ItemListFixtureXpath(datum['module'].fixture_select.fixture_type).instance(),
+                        nodeset=nodeset,
                         value=datum['module'].fixture_select.variable_column,
                         detail_select=id_strings.fixture_detail(detail_module)
                     ),
@@ -611,7 +634,8 @@ class EntriesHelper(object):
             uses_inline_search = module_uses_inline_search(detail_module)
             if loads_registry_case or uses_inline_search:
                 if uses_inline_search:
-                    instance_name, root_element = "results:inline", "results"
+                    instance_name = detail_module.search_config.get_instance_name()
+                    root_element = "results"
                 elif loads_registry_case:
                     instance_name, root_element = "results", "results"
                 if detail_module.search_config.search_filter and USH_SEARCH_FILTER.enabled(self.app.domain):
@@ -656,10 +680,9 @@ class EntriesHelper(object):
         """
         from ..post_process.remote_requests import (
             RESULTS_INSTANCE,
-            RESULTS_INSTANCE_INLINE,
             RemoteRequestFactory,
         )
-        storage_instance = RESULTS_INSTANCE_INLINE if uses_inline_search else RESULTS_INSTANCE
+        storage_instance = module.search_config.get_instance_name() if uses_inline_search else RESULTS_INSTANCE
         factory = RemoteRequestFactory(None, module, [], storage_instance=storage_instance)
         query = factory.build_remote_request_queries()[0]
         return FormDatumMeta(datum=query, case_type=None, requires_selection=False, action=None)

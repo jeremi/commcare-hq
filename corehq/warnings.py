@@ -54,9 +54,11 @@ WHITELIST = [
     ),
     (
         # This should be tested on a newer version(>2.5) of ES.Should be removed if fixed
-        "elasticsearch2.connection.http_urllib3",
+        "elasticsearch5.connection.http_urllib3",
         "HTTPResponse.getheaders() is deprecated and will be removed in urllib3 v2.1.0."
     ),
+    # Should be removed when Nose is updated
+    ("nose.plugins.manager", "pkg_resources is deprecated as an API."),
 
     # other, resolution not obvious
     ("IPython.core.interactiveshell", "install IPython inside the virtualenv.", UserWarning),

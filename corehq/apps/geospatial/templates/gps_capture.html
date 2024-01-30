@@ -1,49 +1,13 @@
-{% extends "hqwebapp/bootstrap3/base_section.html" %}
 {% load compress %}
 {% load i18n %}
 {% load hq_shared_tags %}
 
-{% block page_title %}
-    {{ current_page.page_name }}
-{% endblock page_title %}
-
-{% block js %}{{ block.super }}
-    <!-- Scripts for mapbox -->
-    <script src='https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js'></script>
-    <script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.0/mapbox-gl-draw.js'></script>
-    {% compress js %}
-        <script src="{% static 'geospatial/js/gps_capture.js' %}"></script>
-    {% endcompress %}
-{% endblock %}
-
- {% block stylesheets %}
- {{ block.super }}
- <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css">
- <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.0/mapbox-gl-draw.css" type="text/css">
- {% endblock %}
-
-
-{% block additional_initial_page_data %}{{ block.super }}
-    {% initial_page_data "mapbox_access_token" mapbox_access_token %}
-{% endblock %}
-
-{% block page_content %}
-{% initial_page_data 'data_type' data_type %}
-{% registerurl 'get_paginated_cases_or_users_without_gps' domain %}
-{% registerurl 'case_data' domain '---' %}
-{% registerurl 'edit_commcare_user' domain '---' %}
-{% registerurl 'gps_capture' domain %}
-
-<div id="no-gps-list" class="ko-template">
+<div id="no-gps-list-{{ data_type }}" class="ko-template">
     <p class="lead">
         <p>
             {% if data_type == 'user' %}
                 {% blocktrans %}
                     Mobile workers that do not have any associated GPS data.
-                {% endblocktrans %}
-            {% else %}
-                {% blocktrans %}
-                    Cases that do not have any associated GPS data.
                 {% endblocktrans %}
             {% endif %}
         </p>
@@ -58,20 +22,20 @@
             <h3 class="panel-title">
                 {% if data_type == 'user' %}
                     {% trans 'Users without GPS Data' %}
-                {% else %}
-                    {% trans 'Cases without GPS Data' %}
                 {% endif %}
             </h3>
         </div>
         <div class="panel-body">
-            <div class="row">
-                <div class="col-sm-6">
-                    <search-box data-apply-bindings="false"
-                                params="value: query,
-                                        action: function() { goToPage(1); },
-                                        placeholder: '{% trans_html_attr "Search..." %}'"></search-box>
+            {% if data_type == 'user' %}
+                <div class="row">
+                    <div class="col-sm-6">
+                        <search-box data-apply-bindings="false"
+                                    params="value: query,
+                                            action: function() { goToPage(1); },
+                                            placeholder: '{% trans_html_attr "Search..." %}'"></search-box>
+                    </div>
                 </div>
-            </div>
+            {% endif %}
             <table class="table table-striped table-responsive"
                    style="margin-botton: 0;"
                    data-bind="visible: showTable">
@@ -125,7 +89,7 @@
                             </div>
                         </td>
                         <td>
-                            <button type="button" class="btn btn-default" data-bind="event: {click: $root.captureLocationForItem.bind($data)}">
+                            <button type="button" class="btn btn-default" data-bind="event: {click: $root.captureLocationForItem.bind($data)}, disable: $root.isCreatingCase">
                                 {% trans "Capture on Map" %}
                             </button>
                             <button type="button" class="btn btn-primary" data-bind="enable: canSaveRow, event: {click: $root.saveDataRow.bind($data)}">
@@ -171,12 +135,63 @@
                                 showSpinner: showPaginationSpinner"></pagination>
         </div>
     </div>
-    <h3 data-bind="visible: itemLocationBeingCapturedOnMap">
-      <div data-bind="with: itemLocationBeingCapturedOnMap">
-          {% trans "Capturing location for:" %}
-          <span data-bind="text: name"></span>
-      </div>
-    </h3>
+    {% if data_type == 'case' %}
+        <button class="btn btn-primary" data-bind="click: startCreateCase, hidden: isCreatingCase, disable: itemLocationBeingCapturedOnMap">
+            {% trans 'Create New Case' %}
+        </button>
+        <button class="btn btn-primary" data-bind="click: finishCreateCase, visible: isCreatingCase">
+            {% trans 'Save Case' %}
+        </button>
+        <button class="btn btn-default" data-bind="click: cancelCreateCase, visible: isCreatingCase">
+            {% trans 'Cancel' %}
+        </button>
+    {% endif %}
+    <div class="panel" data-bind="visible: itemLocationBeingCapturedOnMap">
+        <div data-bind="with: itemLocationBeingCapturedOnMap" class="row">
+            <h3 class="col">
+                {% trans "Capturing location for:" %}
+                <span data-bind="text: name"></span>
+            </h3>
+            <div data-bind="visible: $root.isCreatingCase" class="form-row">
+                <div class="col" data-bind="css: { 'has-error': $root.hasCreateCaseError }">
+                    <label class="control-label col-sm-1 col-md-1 col-lg-1">
+                        {% trans 'Case Name' %}
+                    </label>
+                    <div class="col-sm-2 col-md-2 col-lg-2" >
+                        <input data-bind="value: name, visible: $root.isCreatingCase" type="text" class="form-control" placeholder="{% trans 'Enter new case name...' %}" />
+                        <span class="help-block" data-bind="visible: $root.hasCreateCaseError">
+                            {% trans 'A case name is required' %}
+                        </span>
+                    </div>
+                </div>
+                <div class="col" data-bind="css: { 'has-error': $root.hasCaseTypeError }">
+                    <label class="control-label col-sm-1 col-md-1 col-lg-1">
+                        {% trans 'Case Type' %}
+                    </label>
+                    <div class="col-sm-2 col-md-2 col-lg-2">
+                        <select class="form-control" data-bind="select2: $root.availableCaseTypes, value: $root.selectedCaseType">
+                        </select>
+                        <span class="help-block" data-bind="visible: $root.hasCaseTypeError">
+                            {% trans 'A case type is required' %}
+                        </span>
+                    </div>
+                </div>
+                <div class="col">
+                    <label class="control-label col-sm-1 col-md-1 col-lg-1">
+                        {% trans 'Owner' %}
+                    </label>
+                    <div class="col-sm-3 col-md-3 col-lg-3">
+                        <select class="form-control"
+                                type="text"
+                                id="owner-select"
+                                data-bind="select2: {},
+                                           optionsText: 'text',
+                                           optionsValue: 'id',
+                                           event: {change: $root.onOwnerIdChange}">
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-<div id="geospatial-map" style="height: 500px"></div>
-{% endblock %}

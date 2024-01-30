@@ -4,8 +4,7 @@
   background-color: white;
   .box-shadow(0 0 10px 2px rgba(0,0,0,.1));
   margin-bottom: 2rem;
-  margin-top: 20px;
-  font-size: 16px;
+  font-size: @font-size-base;   // Don't overshadow inputs
 
   .page-header {
     padding-bottom: 30px;
@@ -15,17 +14,32 @@
     }
   }
 
-  .loading {
-    right: 20px;
-  }
   .controls {
     padding-right: 25px;
     padding-top: 3px;
   }
+
   .form-actions {
-    margin-top: 30px;
+    margin: 30px 0 0 0;
     background-color: lighten(@cc-brand-hi, 10);
     .border-bottom-radius(0);
+
+    .nonanchored-submit .btn {
+      font-size: 20px;
+      padding: 13px 24px;
+      .transition(all .5s);
+    }
+  }
+
+  .anchored-submit {
+    background-color: @call-to-action-low;
+    width: 100vw;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    position: fixed;
+    bottom: 0px;
+    left: 0;
+    z-index: @zindex-formplayer-anchored-submit;
   }
 
   .form-group {
@@ -36,9 +50,52 @@
     }
   }
 
+  .gr.panel {
+    border-radius: 0px;
+  }
+
+  .rep.panel {
+    border-radius: 0px;
+  }
+
   .panel-body {
-    padding-left: @form-text-indent + 5px;
-    padding-right: @form-text-indent + 5px;
+    padding-left: 5px;
+    padding-right: 5px;
+    // Bootstrap introduces -10px left/right margin for row classes. This causes element to overflow parent.
+    .row {
+      margin-left: 0px;
+      margin-right: 0px;
+    }
+    @media (max-width: @screen-xs-max) {
+      padding-left: 0px;
+      padding-right: 0px;
+    }
+  }
+
+  .stripe-repeats {
+    > .row, .panel-body > .children > .row {
+      &:nth-of-type(odd) {
+        background-color: @table-bg-accent;
+      }
+      &:nth-of-type(even) {
+        background-color: white;
+      }
+      &:hover {
+        background-color: @table-bg-hover;
+      }
+    }
+  }
+
+  .group-border {
+    border: solid 1px @cc-neutral-mid;
+    border-radius: 8px;
+    margin: 2px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .info {
+    overflow-x: auto;
   }
 
   .gr-header {
@@ -52,12 +109,11 @@
     }
   }
 
-}
+  .panel-heading {
+    border-top-left-radius: 0px;
+    border-top-right-radius: 0px;
+  }
 
-.form-container .form-actions .btn {
-  font-size: 20px;
-  padding: 13px 24px;
-  .transition(all .5s);
 }
 
 .form-group-required-label {
@@ -116,17 +172,17 @@
 
 }
 
+@media screen {
+    .case-tile-container {
+        position: sticky;
+        top: @breadcrumb-height-cloudcare;
+        z-index: @zindex-persistent-tile-cloudcare;
 
-.question-container .gr .children {
-  .info.panel-default {
-    border: none;
-    background-color: transparent;
-    .box-shadow(none);
-
-    .panel-body {
-      padding-top: 6px;
+        #persistent-case-tile .persistent-sticky {
+            box-shadow: 0 0 10px 2px rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid @cc-neutral-hi;
+        }
     }
-  }
 }
 
 @media print {
@@ -156,5 +212,29 @@
   .help-block {
     color: #52616f !important;
     font-size: 14px;
+  }
+}
+
+.question-tile-row:has(div.q) {
+  margin-bottom: 15px;
+}
+
+.question-tile-row {
+  display: flex;
+  align-items: top;
+  margin-left: 10px;
+  margin-right: 10px;
+  * .form-group, * p, * .control-label {
+    padding-top: 0px !important;
+    padding-bottom: 0px !important;
+    margin-top: 0px !important;
+    margin-bottom: 0px !important;
+  }
+}
+
+.question-tile-row {
+  .gr {
+    padding-right: 0px !important;
+    padding-left: 0px !important;
   }
 }

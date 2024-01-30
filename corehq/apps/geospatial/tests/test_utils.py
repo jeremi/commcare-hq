@@ -14,6 +14,7 @@ from corehq.apps.geospatial.utils import (
     get_geo_user_property,
     set_case_gps_property,
     set_user_gps_property,
+    create_case_with_gps_property,
 )
 from corehq.apps.geospatial.const import GPS_POINT_CASE_PROPERTY
 
@@ -36,6 +37,7 @@ class TestGetGeoProperty(TestCase):
             user_location_property_name=user_geo_property,
         )
         config.save()
+        self.addCleanup(config.delete)
 
         self.assertEqual(get_geo_case_property(self.DOMAIN), case_geo_property)
         self.assertEqual(get_geo_user_property(self.DOMAIN), user_geo_property)
@@ -89,6 +91,21 @@ class TestSetGPSProperty(TestCase):
         case_obj = CommCareCase.objects.get_case(self.case_obj.case_id, self.DOMAIN)
         self.assertEqual(case_obj.case_json[GPS_POINT_CASE_PROPERTY], '1.23 4.56 0.0 0.0')
 
+    def test_create_case_with_gps_property(self):
+        case_type = 'gps-case'
+        submit_data = {
+            'name': 'CaseB',
+            'lat': '1.23',
+            'lon': '4.56',
+            'case_type': case_type,
+            'owner_id': self.user.user_id,
+        }
+        create_case_with_gps_property(self.DOMAIN, submit_data)
+        case_list = CommCareCase.objects.get_case_ids_in_domain(self.DOMAIN, case_type)
+        self.assertEqual(len(case_list), 1)
+        case_obj = CommCareCase.objects.get_case(case_list[0], self.DOMAIN)
+        self.assertEqual(case_obj.case_json[GPS_POINT_CASE_PROPERTY], '1.23 4.56 0.0 0.0')
+
     def test_set_user_gps_property(self):
         submit_data = {
             'id': self.user.user_id,
@@ -98,4 +115,4 @@ class TestSetGPSProperty(TestCase):
         }
         set_user_gps_property(self.DOMAIN, submit_data)
         user = CommCareUser.get_by_user_id(self.user.user_id, self.DOMAIN)
-        self.assertEqual(user.metadata[GPS_POINT_CASE_PROPERTY], '1.23 4.56 0.0 0.0')
+        self.assertEqual(user.get_user_data(self.DOMAIN)[GPS_POINT_CASE_PROPERTY], '1.23 4.56 0.0 0.0')
