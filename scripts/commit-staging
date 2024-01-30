@@ -1,0 +1,2 @@
+#!/bin/bash
+safe-commit-files "$@" scripts/staging.yaml
